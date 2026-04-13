@@ -1,0 +1,20 @@
+# Build outputs
+bin/
+obj/
+*.user
+
+# Published single-file artifact (built locally; not tracked in source)
+HcfScreensaver.scr
+
+# .NET / VS
+.vs/
+*.suo
+.idea/
+*.rsuser
+*.sln.docstates
+packages/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
