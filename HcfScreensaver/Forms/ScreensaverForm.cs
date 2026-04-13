@@ -25,6 +25,17 @@ internal struct CompletedSeg
     public PointF A, B;
 }
 
+internal struct Asteroid
+{
+    public float    X, Y, VX, VY;
+    public float    Angle, AngVel;
+    public float    Scale;
+    public PointF[] Poly;    // normalized polygon verts (unit-radius-ish)
+    public int      Size;    // 0=large 1=medium 2=small
+    public float    Fade;    // 1=alive, fades to 0 when dying
+    public bool     Dying;
+}
+
 // ── Main form ────────────────────────────────────────────────────────────────
 
 public sealed class ScreensaverForm : Form
@@ -231,6 +242,88 @@ public sealed class ScreensaverForm : Form
     private int    _diskFlashSector = -1;
     private float  _diskFlashTimer;
 
+    // ── AsteroidField ─────────────────────────────────────────────────────────
+    private Asteroid[] _asteroids = [];
+    private float      _shipX, _shipY, _shipAngle;
+    private float      _shotX, _shotY, _shotDX, _shotDY, _shotLife;
+    private float      _shotCooldown;
+    private float      _astSplitTimer;
+
+    // ── TankWars ──────────────────────────────────────────────────────────────
+    private float[] _terrain   = [];
+    private float   _tw1X, _tw2X;
+    private float   _twProjX, _twProjY, _twProjVX, _twProjVY;
+    private bool    _twProjActive;
+    private float   _twFireTimer;
+    private int     _twTurn;          // 0 = tank1 fires, 1 = tank2 fires
+    private float   _twExplX, _twExplY, _twExplR, _twExplTimer;
+    private int     _twScore1, _twScore2;
+
+    // ── MutinyBBS ─────────────────────────────────────────────────────────────
+    private int   _bbsPhase, _bbsLineIdx, _bbsCharIdx;
+    private float _bbsAccum, _bbsCursorAccum;
+    private bool  _bbsCursor;
+    private float _bbsPauseAccum, _bbsFadeAlpha = 1f;
+    private readonly List<string> _bbsDone = [];
+
+    private static readonly string[] BbsLines =
+    [
+        "ATDT 214-555-0174",
+        "",
+        "CONNECT 2400",
+        "",
+        "=================================================",
+        "  MUTINY  //  ONLINE GAMING NETWORK",
+        "  Dallas, TX  ~  (214) 555-0174  ~  2400 BAUD",
+        "=================================================",
+        "",
+        "Last login: Thu Oct 14 1987  11:47pm",
+        "Welcome back, HOOLIGAN",
+        "Users online: 47  |  New messages: 14",
+        "",
+        "[C]hat  [G]ames  [M]ail  [B]ulletin  [Q]uit > B",
+        "",
+        "=== MUTINY BULLETIN BOARD ===",
+        "",
+        "[*] SONARIS Tournament — Friday 8pm CST  (14 new)",
+        "[*] Anyone else lag on level 3??          (8 new)",
+        "[ ] 56k modem upgrade — worth it?         (3 new)",
+        "[ ] Donna's network patch feedback        (5 new)",
+        "[ ] Joe MacMillan sighting — Dallas??     (2 new)",
+        "",
+        "> G",
+        "",
+        "=== GAME LOBBY ===",
+        "",
+        "  1. SONARIS          8 players online  [JOIN]",
+        "  2. Space Siege       2 players        [JOIN]",
+        "  3. Dungeon Lords      FULL            [WATCH]",
+        "",
+        "Joining SONARIS room 1...",
+        "Connected. Waiting for players...",
+        "",
+    ];
+
+    // ── SonarisGame (Breakout) ────────────────────────────────────────────────
+    private float  _sbrBallX, _sbrBallY, _sbrBallVX, _sbrBallVY;
+    private float  _sbrPaddleX;
+    private bool[] _sbrBricks = [];
+    private int    _sbrScore;
+    private float  _sbrResetTimer;
+    private const  string SbrWord = "HALT AND CATCH FIRE";
+
+    // ── TokenRing ─────────────────────────────────────────────────────────────
+    private float _tokAngle;       // current token position on ring (radians)
+    private float _tokSendTimer;
+    private int   _tokSrcNode = -1, _tokDstNode = -1;
+    private float _tokPacketAngle; // where the active packet is (radians)
+    private bool  _tokTransmitting;
+    private float _tokFlashTimer;
+    private int   _tokFlashNode;
+
+    private static readonly string[] TokenNodes =
+        ["GIANT-01", "GIANT-02", "GIANT-03", "ROUTER", "MODEM", "GIANT-04"];
+
     // ─────────────────────────────────────────────────────────────────────────
     // Construction
     // ─────────────────────────────────────────────────────────────────────────
@@ -419,6 +512,51 @@ public sealed class ScreensaverForm : Form
         _diskFlashSector = -1;
         _diskFlashTimer  = 0f;
 
+        // AsteroidField
+        _shipX = ClientSize.Width / 2f;
+        _shipY = ClientSize.Height / 2f;
+        _shipAngle  = 0f;
+        _shotLife   = 0f;
+        _shotCooldown = 0f;
+        _astSplitTimer  = 60f;
+        _asteroids = new Asteroid[8];
+        for (int i = 0; i < _asteroids.Length; i++)
+            _asteroids[i] = MakeAsteroid(
+                _rng.Next(ClientSize.Width), _rng.Next(ClientSize.Height), 0);
+
+        // TankWars
+        GenerateTerrain();
+        _tw1X = ClientSize.Width * 0.18f;
+        _tw2X = ClientSize.Width * 0.82f;
+        _twProjActive = false;
+        _twFireTimer  = 60f;
+        _twTurn       = 0;
+        _twExplTimer  = 0f;
+        _twScore1     = 0; _twScore2 = 0;
+
+        // MutinyBBS
+        _bbsPhase = 0; _bbsLineIdx = 0; _bbsCharIdx = 0;
+        _bbsAccum = 0f; _bbsCursor = true; _bbsFadeAlpha = 1f;
+        _bbsPauseAccum = 0f;
+        _bbsDone.Clear();
+
+        // SonarisGame
+        _sbrBallX  = ClientSize.Width  / 2f;
+        _sbrBallY  = ClientSize.Height * 0.6f;
+        _sbrBallVX = 3f; _sbrBallVY = -3f;
+        _sbrPaddleX = ClientSize.Width / 2f;
+        _sbrScore   = 0;
+        _sbrResetTimer = 0f;
+        _sbrBricks  = new bool[SbrWord.Length];
+        for (int i = 0; i < _sbrBricks.Length; i++) _sbrBricks[i] = true;
+
+        // TokenRing
+        _tokAngle       = 0f;
+        _tokSendTimer   = 40f;
+        _tokTransmitting = false;
+        _tokFlashTimer  = 0f;
+        _tokFlashNode   = -1;
+
         _lastMousePosition = Point.Empty;
     }
 
@@ -448,6 +586,11 @@ public sealed class ScreensaverForm : Form
             case AnimationStyle.OscilloScope:   DrawOscilloScope(g);         break;
             case AnimationStyle.DosShell:       DrawDosShell(g);             break;
             case AnimationStyle.DiskMap:        DrawDiskMap(g);              break;
+            case AnimationStyle.AsteroidField:  DrawAsteroidField(g);        break;
+            case AnimationStyle.TankWars:       DrawTankWars(g);             break;
+            case AnimationStyle.MutinyBBS:      DrawMutinyBBS(g);            break;
+            case AnimationStyle.SonarisGame:    DrawSonarisGame(g);          break;
+            case AnimationStyle.TokenRing:      DrawTokenRing(g);            break;
         }
     }
 
@@ -474,6 +617,11 @@ public sealed class ScreensaverForm : Form
             case AnimationStyle.OscilloScope:  UpdateOscilloScope(speed); break;
             case AnimationStyle.DosShell:      UpdateDosShell(speed);     break;
             case AnimationStyle.DiskMap:       UpdateDiskMap(speed);      break;
+            case AnimationStyle.AsteroidField: UpdateAsteroidField(speed); break;
+            case AnimationStyle.TankWars:      UpdateTankWars(speed);     break;
+            case AnimationStyle.MutinyBBS:     UpdateMutinyBBS(speed);    break;
+            case AnimationStyle.SonarisGame:   UpdateSonarisGame(speed);  break;
+            case AnimationStyle.TokenRing:     UpdateTokenRing(speed);    break;
         }
     }
 
@@ -1429,6 +1577,640 @@ public sealed class ScreensaverForm : Form
             g.FillRectangle(barFgBr, ox, sy2 + _monoCharH + 4, barFill, 6);
             g.DrawString("CARDIFF GIANT HDD  //  DISK ANALYZER v1.1",
                 _monoFont, dimBr, ox + barW + 10, sy2 + _monoCharH + 2);
+        }
+    }
+
+    // =========================================================================
+    // AsteroidField
+    // =========================================================================
+
+    private Asteroid MakeAsteroid(float x, float y, int size)
+    {
+        float scale = size == 0 ? 44f : size == 1 ? 24f : 13f;
+        int n = 7 + _rng.Next(3);
+        var poly = new PointF[n];
+        for (int i = 0; i < n; i++)
+        {
+            float a = i * MathF.PI * 2 / n;
+            float r = 0.65f + (float)_rng.NextDouble() * 0.35f;
+            poly[i] = new PointF(MathF.Cos(a) * r, MathF.Sin(a) * r);
+        }
+        return new Asteroid
+        {
+            X = x, Y = y,
+            VX = (_rng.Next(2) == 0 ? 1 : -1) * (0.3f + (float)_rng.NextDouble() * 0.9f),
+            VY = (_rng.Next(2) == 0 ? 1 : -1) * (0.3f + (float)_rng.NextDouble() * 0.9f),
+            Angle   = (float)_rng.NextDouble() * MathF.PI * 2,
+            AngVel  = ((float)_rng.NextDouble() - 0.5f) * 0.04f,
+            Scale   = scale,
+            Poly    = poly,
+            Size    = size,
+            Fade    = 1f,
+            Dying   = false
+        };
+    }
+
+    private void UpdateAsteroidField(float speed)
+    {
+        float w = ClientSize.Width, h = ClientSize.Height;
+
+        // Rotate ship slowly, fire periodically
+        _shipAngle  += 0.008f * speed;
+        _shotCooldown -= speed;
+        if (_shotCooldown <= 0f)
+        {
+            _shotX  = _shipX; _shotY = _shipY;
+            _shotDX = MathF.Cos(_shipAngle) * 8f;
+            _shotDY = MathF.Sin(_shipAngle) * 8f;
+            _shotLife = 60f;
+            _shotCooldown = 80f + _rng.Next(60);
+        }
+        if (_shotLife > 0) { _shotX += _shotDX * speed; _shotY += _shotDY * speed; _shotLife -= speed; }
+
+        // Advance asteroids
+        for (int i = 0; i < _asteroids.Length; i++)
+        {
+            ref var a = ref _asteroids[i];
+            a.X     = ((a.X + a.VX * speed) % w + w) % w;
+            a.Y     = ((a.Y + a.VY * speed) % h + h) % h;
+            a.Angle += a.AngVel * speed;
+            if (a.Dying) { a.Fade -= 0.04f * speed; if (a.Fade <= 0) a.Dying = false; }
+        }
+
+        // Periodically split a large asteroid
+        _astSplitTimer -= speed;
+        if (_astSplitTimer <= 0f)
+        {
+            _astSplitTimer = 120f + _rng.Next(180);
+            // Find a large living asteroid
+            for (int i = 0; i < _asteroids.Length; i++)
+            {
+                if (_asteroids[i].Size == 0 && !_asteroids[i].Dying)
+                {
+                    float sx = _asteroids[i].X, sy = _asteroids[i].Y;
+                    _asteroids[i].Dying = true;
+                    // Replace two medium ones in empty slots (or reuse the dying slot next frame)
+                    for (int j = 0; j < _asteroids.Length; j++)
+                    {
+                        if (!_asteroids[j].Dying && _rng.Next(8) == 0)
+                        {
+                            _asteroids[j] = MakeAsteroid(sx + _rng.Next(40) - 20, sy + _rng.Next(40) - 20, 1);
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        // Respawn dead asteroids as new large ones at edge
+        for (int i = 0; i < _asteroids.Length; i++)
+        {
+            if (!_asteroids[i].Dying && _asteroids[i].Fade <= 0)
+            {
+                float ex = _rng.Next(2) == 0 ? 0 : w;
+                float ey = (float)_rng.NextDouble() * h;
+                _asteroids[i] = MakeAsteroid(ex, ey, 0);
+            }
+        }
+    }
+
+    private void DrawAsteroidField(Graphics g)
+    {
+        var col = _settings.TextColor;
+
+        // Ship — classic triangle
+        float sa = _shipAngle;
+        var shipPts = new PointF[]
+        {
+            new(_shipX + MathF.Cos(sa) * 14, _shipY + MathF.Sin(sa) * 14),
+            new(_shipX + MathF.Cos(sa + 2.4f) * 9, _shipY + MathF.Sin(sa + 2.4f) * 9),
+            new(_shipX + MathF.Cos(sa - 2.4f) * 9, _shipY + MathF.Sin(sa - 2.4f) * 9)
+        };
+        using var shipPen = new Pen(Color.FromArgb(220, col), 1.5f);
+        using var shipGlow = new Pen(Color.FromArgb(35, col), 5f);
+        g.DrawPolygon(shipGlow, shipPts);
+        g.DrawPolygon(shipPen, shipPts);
+
+        // Shot
+        if (_shotLife > 0)
+        {
+            using var shotBr = new SolidBrush(Color.White);
+            g.FillEllipse(shotBr, _shotX - 3, _shotY - 3, 6, 6);
+        }
+
+        // Asteroids
+        foreach (ref var ast in _asteroids.AsSpan())
+        {
+            if (ast.Poly == null || (!ast.Dying && ast.Fade <= 0)) continue;
+            float fade = ast.Dying ? Math.Max(0, ast.Fade) : 1f;
+            int n = ast.Poly.Length;
+            var pts = new PointF[n];
+            for (int i = 0; i < n; i++)
+            {
+                float px = ast.Poly[i].X * MathF.Cos(ast.Angle) - ast.Poly[i].Y * MathF.Sin(ast.Angle);
+                float py = ast.Poly[i].X * MathF.Sin(ast.Angle) + ast.Poly[i].Y * MathF.Cos(ast.Angle);
+                pts[i] = new PointF(ast.X + px * ast.Scale, ast.Y + py * ast.Scale);
+            }
+            using var pen  = new Pen(Color.FromArgb((int)(200 * fade), col), 1.5f);
+            using var glow = new Pen(Color.FromArgb((int)(28 * fade), col), 5f);
+            g.DrawPolygon(glow, pts);
+            g.DrawPolygon(pen,  pts);
+        }
+
+        // Label
+        if (_monoFont != null)
+        {
+            using var lbBr = new SolidBrush(Color.FromArgb(70, col));
+            g.DrawString("GIANT ARCADE  //  1 PLAYER  //  INSERT COIN",
+                _monoFont, lbBr, 14f, ClientSize.Height - _monoCharH - 10f);
+        }
+    }
+
+    // =========================================================================
+    // TankWars
+    // =========================================================================
+
+    private void GenerateTerrain()
+    {
+        int w = Math.Max(1, ClientSize.Width);
+        _terrain = new float[w];
+        float baseH = ClientSize.Height * 0.68f;
+        float a1 = ClientSize.Height * 0.07f, a2 = ClientSize.Height * 0.04f;
+        float f1 = MathF.PI * 2 * 2.5f / w, f2 = MathF.PI * 2 * 5f / w;
+        float p1 = (float)_rng.NextDouble() * MathF.PI * 2;
+        float p2 = (float)_rng.NextDouble() * MathF.PI * 2;
+        for (int x = 0; x < w; x++)
+            _terrain[x] = baseH + a1 * MathF.Sin(x * f1 + p1) + a2 * MathF.Sin(x * f2 + p2);
+    }
+
+    private float TerrainAt(float x) =>
+        _terrain.Length == 0 ? 0 : _terrain[Math.Clamp((int)x, 0, _terrain.Length - 1)];
+
+    private void UpdateTankWars(float speed)
+    {
+        _twFireTimer -= speed;
+
+        // Explosion decay
+        if (_twExplTimer > 0) _twExplTimer -= speed;
+
+        if (_twProjActive)
+        {
+            _twProjVY += 0.18f * speed;   // gravity
+            _twProjX  += _twProjVX * speed;
+            _twProjY  += _twProjVY * speed;
+
+            float terY = TerrainAt(_twProjX);
+            bool outOfBounds = _twProjX < 0 || _twProjX >= ClientSize.Width || _twProjY > ClientSize.Height;
+            if (_twProjY >= terY || outOfBounds)
+            {
+                _twProjActive = false;
+                _twExplX = _twProjX; _twExplY = MathF.Min(_twProjY, terY);
+                _twExplR = 0f; _twExplTimer = 40f;
+
+                // Check hit on the other tank
+                float hitX = _twTurn == 0 ? _tw2X : _tw1X;
+                if (MathF.Abs(_twProjX - hitX) < 30)
+                {
+                    if (_twTurn == 0) _twScore1++; else _twScore2++;
+                }
+
+                _twTurn     = 1 - _twTurn;
+                _twFireTimer = 80f + _rng.Next(60);
+            }
+        }
+        else if (_twFireTimer <= 0f)
+        {
+            // Fire
+            float srcX  = _twTurn == 0 ? _tw1X : _tw2X;
+            float dstX  = _twTurn == 0 ? _tw2X : _tw1X;
+            float srcY  = TerrainAt(srcX);
+            float dstY  = TerrainAt(dstX);
+            float dir   = dstX > srcX ? 1f : -1f;
+            float dist  = MathF.Abs(dstX - srcX);
+            float spd   = 5f + dist * 0.012f + (float)_rng.NextDouble() * 2f;
+            float angle = MathF.Atan2(srcY - dstY, dstX - srcX)
+                          - (0.3f + (float)_rng.NextDouble() * 0.25f);
+            _twProjX  = srcX; _twProjY = srcY - 14f;
+            _twProjVX = MathF.Cos(angle) * spd * dir;
+            _twProjVY = -MathF.Sin(angle) * spd;
+            _twProjActive = true;
+        }
+
+        // Grow explosion radius
+        if (_twExplTimer > 0) _twExplR = Math.Min(40f, _twExplR + 2f * speed);
+    }
+
+    private void DrawTankWars(Graphics g)
+    {
+        var col = _settings.TextColor;
+
+        // Sky gradient hint (optional subtle bands)
+        // Terrain polygon — fill below terrain line
+        int w = ClientSize.Width;
+        if (_terrain.Length >= w)
+        {
+            var terPts = new PointF[w + 2];
+            for (int x = 0; x < w; x++) terPts[x] = new PointF(x, _terrain[x]);
+            terPts[w]     = new PointF(w, ClientSize.Height);
+            terPts[w + 1] = new PointF(0, ClientSize.Height);
+            using var terFill = new SolidBrush(Color.FromArgb(18, col));
+            g.FillPolygon(terFill, terPts);
+            using var terPen = new Pen(Color.FromArgb(160, col), 1.5f);
+            var linePts = new PointF[w];
+            for (int x = 0; x < w; x++) linePts[x] = new PointF(x, _terrain[x]);
+            g.DrawLines(terPen, linePts);
+        }
+
+        // Tank helper
+        void DrawTank(float tx, bool right)
+        {
+            float ty = TerrainAt(tx);
+            float bw = 28, bh = 11;
+            using var bodyFill = new SolidBrush(Color.FromArgb(50, col));
+            using var bodyPen  = new Pen(Color.FromArgb(200, col), 1.5f);
+            g.FillRectangle(bodyFill, tx - bw / 2, ty - bh, bw, bh);
+            g.DrawRectangle(bodyPen,  tx - bw / 2, ty - bh, bw, bh);
+            // Barrel
+            float ba = right ? -MathF.PI * 0.3f : -MathF.PI * 0.7f;
+            float blen = 18;
+            g.DrawLine(bodyPen, tx, ty - bh, tx + MathF.Cos(ba) * blen, ty - bh + MathF.Sin(ba) * blen);
+            // Treads
+            using var treadPen = new Pen(Color.FromArgb(130, col), 3f);
+            g.DrawLine(treadPen, tx - bw / 2 - 3, ty, tx + bw / 2 + 3, ty);
+        }
+
+        DrawTank(_tw1X, true);
+        DrawTank(_tw2X, false);
+
+        // Projectile
+        if (_twProjActive)
+        {
+            using var projBr = new SolidBrush(Color.White);
+            g.FillEllipse(projBr, _twProjX - 3, _twProjY - 3, 6, 6);
+        }
+
+        // Explosion
+        if (_twExplTimer > 0 && _twExplR > 0)
+        {
+            float alpha = _twExplTimer / 40f;
+            using var exPen = new Pen(Color.FromArgb((int)(180 * alpha), col), 2f);
+            using var exGlow = new Pen(Color.FromArgb((int)(50 * alpha), col), 8f);
+            g.DrawEllipse(exGlow, _twExplX - _twExplR, _twExplY - _twExplR, _twExplR * 2, _twExplR * 2);
+            g.DrawEllipse(exPen, _twExplX - _twExplR, _twExplY - _twExplR, _twExplR * 2, _twExplR * 2);
+        }
+
+        // Score
+        if (_monoFont != null)
+        {
+            using var scoreBr = new SolidBrush(Color.FromArgb(170, col));
+            g.DrawString($"TANK-1: {_twScore1:D2}", _monoFont, scoreBr, 20f, 14f);
+            using var scoreBr2 = new SolidBrush(Color.FromArgb(170, col));
+            var s2 = $"TANK-2: {_twScore2:D2}";
+            using var measG = CreateGraphics();
+            var sz = measG.MeasureString(s2, _monoFont);
+            g.DrawString(s2, _monoFont, scoreBr2, ClientSize.Width - sz.Width - 20f, 14f);
+            using var titleBr = new SolidBrush(Color.FromArgb(60, col));
+            g.DrawString("TANKWARS  //  CARDIFF GIANT  //  1984",
+                _monoFont, titleBr, 20f, ClientSize.Height - _monoCharH - 10f);
+        }
+    }
+
+    // =========================================================================
+    // MutinyBBS
+    // =========================================================================
+
+    private void UpdateMutinyBBS(float speed)
+    {
+        const float CharsPerSec = 48f;
+        float dt = speed / 60f;
+
+        _bbsCursorAccum += dt;
+        if (_bbsCursorAccum > 0.5f) { _bbsCursor = !_bbsCursor; _bbsCursorAccum = 0f; }
+
+        switch (_bbsPhase)
+        {
+            case 0:
+                _bbsAccum += CharsPerSec * dt * speed * 0.75f;
+                while (_bbsAccum >= 1f && _bbsLineIdx < BbsLines.Length)
+                {
+                    _bbsAccum -= 1f;
+                    string line = BbsLines[_bbsLineIdx];
+                    if (_bbsCharIdx >= line.Length)
+                    {
+                        _bbsDone.Add(line);
+                        _bbsLineIdx++;
+                        _bbsCharIdx = 0;
+                        if (_bbsLineIdx >= BbsLines.Length) { _bbsPhase = 1; _bbsPauseAccum = 0f; }
+                    }
+                    else { _bbsCharIdx++; }
+                }
+                break;
+            case 1:
+                _bbsPauseAccum += dt;
+                if (_bbsPauseAccum > 4f) { _bbsPhase = 2; _bbsFadeAlpha = 1f; }
+                break;
+            case 2:
+                _bbsFadeAlpha -= dt * 0.6f;
+                if (_bbsFadeAlpha <= 0f)
+                {
+                    _bbsPhase = 0; _bbsLineIdx = 0; _bbsCharIdx = 0;
+                    _bbsAccum = 0f; _bbsFadeAlpha = 1f;
+                    _bbsDone.Clear();
+                }
+                break;
+        }
+    }
+
+    private void DrawMutinyBBS(Graphics g)
+    {
+        if (_monoFont == null) return;
+        float alpha = _bbsPhase == 2 ? Math.Max(0f, _bbsFadeAlpha) : 1f;
+        var col = _settings.TextColor;
+        using var mainBr  = new SolidBrush(Color.FromArgb((int)(200 * alpha), col));
+        using var dimBr   = new SolidBrush(Color.FromArgb((int)(100 * alpha), col));
+        using var headerBr = new SolidBrush(Color.FromArgb((int)(230 * alpha), col));
+
+        int lineH = _monoCharH + 2;
+        int y = 14;
+        foreach (var line in _bbsDone)
+        {
+            // Header lines (===) get extra brightness; prompt lines get full bright; rest dim
+            var br = line.StartsWith("=") ? headerBr : line.StartsWith(">") || line.StartsWith("[") ? mainBr : dimBr;
+            g.DrawString(line, _monoFont, br, 18, y);
+            y += lineH;
+        }
+        if (_bbsPhase == 0 && _bbsLineIdx < BbsLines.Length)
+        {
+            string partial = BbsLines[_bbsLineIdx][.._bbsCharIdx];
+            g.DrawString(partial + (_bbsCursor ? "_" : " "), _monoFont, mainBr, 18, y);
+        }
+    }
+
+    // =========================================================================
+    // SonarisGame  (Breakout — letters of "HALT AND CATCH FIRE" as bricks)
+    // =========================================================================
+
+    private void UpdateSonarisGame(float speed)
+    {
+        if (_sbrResetTimer > 0) { _sbrResetTimer -= speed; return; }
+
+        float w = ClientSize.Width, h = ClientSize.Height;
+
+        // Paddle tracks ball with slight lag
+        float target = _sbrBallX;
+        _sbrPaddleX += (target - _sbrPaddleX) * 0.08f * speed;
+        _sbrPaddleX  = Math.Clamp(_sbrPaddleX, 50, w - 50);
+
+        // Move ball
+        _sbrBallX += _sbrBallVX * speed;
+        _sbrBallY += _sbrBallVY * speed;
+
+        // Wall bounces
+        if (_sbrBallX < 6 || _sbrBallX > w - 6)  _sbrBallVX = -_sbrBallVX;
+        if (_sbrBallY < 6)                          _sbrBallVY = -_sbrBallVY;
+
+        // Paddle bounce
+        float padW = 80, padH = 10;
+        float padY = h - 50;
+        if (_sbrBallY + 6 >= padY && _sbrBallY - 6 <= padY + padH &&
+            _sbrBallX >= _sbrPaddleX - padW / 2 && _sbrBallX <= _sbrPaddleX + padW / 2)
+        {
+            _sbrBallVY = -MathF.Abs(_sbrBallVY);
+            _sbrBallVX += (_sbrBallX - _sbrPaddleX) * 0.06f; // angle off paddle
+        }
+
+        // Ball lost — reset
+        if (_sbrBallY > h + 20)
+        {
+            _sbrBallX = w / 2f; _sbrBallY = h * 0.55f;
+            _sbrBallVX = 3f + (float)_rng.NextDouble(); _sbrBallVY = -3.5f;
+        }
+
+        // Brick collision — build brick rects on the fly
+        var brickLayout = GetBrickRects();
+        for (int i = 0; i < _sbrBricks.Length && i < brickLayout.Length; i++)
+        {
+            if (!_sbrBricks[i]) continue;
+            var r = brickLayout[i];
+            if (_sbrBallX + 6 >= r.Left && _sbrBallX - 6 <= r.Right &&
+                _sbrBallY + 6 >= r.Top  && _sbrBallY - 6 <= r.Bottom)
+            {
+                _sbrBricks[i] = false;
+                _sbrBallVY    = -_sbrBallVY;
+                _sbrScore     += 10;
+            }
+        }
+
+        // All bricks gone — reset after pause
+        if (_sbrBricks.All(b => !b))
+        {
+            _sbrResetTimer = 90f;
+            for (int i = 0; i < _sbrBricks.Length; i++) _sbrBricks[i] = true;
+        }
+    }
+
+    private RectangleF[] GetBrickRects()
+    {
+        if (_monoFont == null) return [];
+        float totalW = 0;
+        using var measG = CreateGraphics();
+        for (int i = 0; i < SbrWord.Length; i++)
+            totalW += measG.MeasureString(SbrWord[i].ToString(), _monoFont,
+                PointF.Empty, StringFormat.GenericTypographic).Width + 4;
+
+        float startX = (ClientSize.Width - totalW) / 2f;
+        float brickY = ClientSize.Height * 0.18f;
+        float brickH = _monoCharH + 6;
+        var rects = new RectangleF[SbrWord.Length];
+        float x = startX;
+        for (int i = 0; i < SbrWord.Length; i++)
+        {
+            float cw = measG.MeasureString(SbrWord[i].ToString(), _monoFont,
+                PointF.Empty, StringFormat.GenericTypographic).Width + 8;
+            rects[i] = new RectangleF(x, brickY, cw, brickH);
+            x += cw + 2;
+        }
+        return rects;
+    }
+
+    private void DrawSonarisGame(Graphics g)
+    {
+        var col = _settings.TextColor;
+
+        // Title
+        if (_monoFont != null)
+        {
+            using var titleBr = new SolidBrush(Color.FromArgb(180, col));
+            using var titleFont = new Font("Courier New", _previewMode ? 10f : 16f, FontStyle.Bold, GraphicsUnit.Point);
+            g.DrawString("SONARIS  //  MUTINY ONLINE GAMING  //  1987",
+                titleFont, titleBr, 18f, 14f);
+            using var scoreBr = new SolidBrush(Color.FromArgb(140, col));
+            g.DrawString($"SCORE: {_sbrScore:D6}", _monoFont, scoreBr,
+                ClientSize.Width - 160f, 14f);
+        }
+
+        // Bricks (letters)
+        var bricks = GetBrickRects();
+        using var brickFont = _monoFont != null
+            ? new Font("Courier New", _monoFont.Size, FontStyle.Bold, GraphicsUnit.Point)
+            : new Font("Courier New", 11f, FontStyle.Bold, GraphicsUnit.Point);
+        for (int i = 0; i < _sbrBricks.Length && i < bricks.Length; i++)
+        {
+            if (!_sbrBricks[i]) continue;
+            var r = bricks[i];
+            using var brickFill = new SolidBrush(Color.FromArgb(35, col));
+            using var brickPen  = new Pen(Color.FromArgb(160, col), 1f);
+            using var brickTxt  = new SolidBrush(Color.FromArgb(220, col));
+            g.FillRectangle(brickFill, r);
+            g.DrawRectangle(brickPen,  r.X, r.Y, r.Width, r.Height);
+            g.DrawString(SbrWord[i].ToString(), brickFont, brickTxt, r.X + 3, r.Y + 2);
+        }
+
+        // Ball
+        using var ballBr = new SolidBrush(Color.White);
+        using var ballGlow = new SolidBrush(Color.FromArgb(50, col));
+        g.FillEllipse(ballGlow, _sbrBallX - 8, _sbrBallY - 8, 16, 16);
+        g.FillEllipse(ballBr,   _sbrBallX - 4, _sbrBallY - 4,  8,  8);
+
+        // Paddle
+        float padW = 80, padH = 10;
+        float padY = ClientSize.Height - 50;
+        using var padFill = new SolidBrush(Color.FromArgb(60, col));
+        using var padPen  = new Pen(Color.FromArgb(200, col), 1.5f);
+        g.FillRectangle(padFill, _sbrPaddleX - padW / 2, padY, padW, padH);
+        g.DrawRectangle(padPen,  _sbrPaddleX - padW / 2, padY, padW, padH);
+    }
+
+    // =========================================================================
+    // TokenRing
+    // =========================================================================
+
+    private void UpdateTokenRing(float speed)
+    {
+        int n = TokenNodes.Length;
+
+        // Circulate the token
+        _tokAngle += 0.012f * speed;
+        if (_tokAngle > MathF.PI * 2) _tokAngle -= MathF.PI * 2;
+
+        // Flash decay
+        if (_tokFlashTimer > 0) _tokFlashTimer -= speed;
+
+        // Periodically start a transmission
+        _tokSendTimer -= speed;
+        if (_tokSendTimer <= 0f && !_tokTransmitting)
+        {
+            _tokSrcNode    = _rng.Next(n);
+            _tokDstNode    = (_tokSrcNode + 1 + _rng.Next(n - 1)) % n;
+            _tokPacketAngle = NodeAngle(_tokSrcNode, n);
+            _tokTransmitting = true;
+            _tokSendTimer   = 120f + _rng.Next(80);
+        }
+
+        if (_tokTransmitting)
+        {
+            // Advance packet toward destination
+            float dstAngle = NodeAngle(_tokDstNode, n);
+            float diff     = NormalizeAngle(dstAngle - _tokPacketAngle);
+            float step     = 0.025f * speed;
+            if (MathF.Abs(diff) <= step)
+            {
+                _tokPacketAngle  = dstAngle;
+                _tokTransmitting = false;
+                _tokFlashNode    = _tokDstNode;
+                _tokFlashTimer   = 30f;
+            }
+            else
+            {
+                _tokPacketAngle += MathF.Sign(diff) * step;
+            }
+        }
+    }
+
+    private static float NodeAngle(int idx, int total) =>
+        -MathF.PI / 2f + idx * MathF.PI * 2f / total;
+
+    private static float NormalizeAngle(float a)
+    {
+        while (a >  MathF.PI) a -= MathF.PI * 2;
+        while (a < -MathF.PI) a += MathF.PI * 2;
+        return a;
+    }
+
+    private void DrawTokenRing(Graphics g)
+    {
+        var col = _settings.TextColor;
+        int n   = TokenNodes.Length;
+        float cx = ClientSize.Width  / 2f;
+        float cy = ClientSize.Height / 2f;
+        float r  = Math.Min(ClientSize.Width, ClientSize.Height) * 0.32f;
+
+        // Ring backbone
+        using var ringPen  = new Pen(Color.FromArgb(50, col), 2f);
+        using var ringGlow = new Pen(Color.FromArgb(12, col), 8f);
+        g.DrawEllipse(ringGlow, cx - r, cy - r, r * 2, r * 2);
+        g.DrawEllipse(ringPen,  cx - r, cy - r, r * 2, r * 2);
+
+        // Token dot circling the ring
+        float tx = cx + MathF.Cos(_tokAngle) * r;
+        float ty = cy + MathF.Sin(_tokAngle) * r;
+        using var tokBr   = new SolidBrush(Color.White);
+        using var tokGlow = new SolidBrush(Color.FromArgb(60, col));
+        g.FillEllipse(tokGlow, tx - 8, ty - 8, 16, 16);
+        g.FillEllipse(tokBr,   tx - 4, ty - 4,  8,  8);
+
+        // Active packet
+        if (_tokTransmitting)
+        {
+            float px = cx + MathF.Cos(_tokPacketAngle) * r;
+            float py = cy + MathF.Sin(_tokPacketAngle) * r;
+            using var pktBr   = new SolidBrush(Color.FromArgb(255, 200, 0));
+            using var pktGlow = new SolidBrush(Color.FromArgb(60, 200, 120, 0));
+            g.FillEllipse(pktGlow, px - 10, py - 10, 20, 20);
+            g.FillEllipse(pktBr,   px -  5, py -  5, 10, 10);
+        }
+
+        // Nodes
+        for (int i = 0; i < n; i++)
+        {
+            float na  = NodeAngle(i, n);
+            float nx  = cx + MathF.Cos(na) * r;
+            float ny  = cy + MathF.Sin(na) * r;
+            bool flash = i == _tokFlashNode && _tokFlashTimer > 0;
+            bool src  = _tokTransmitting && i == _tokSrcNode;
+            bool dst  = _tokTransmitting && i == _tokDstNode;
+
+            Color nodeCol = flash ? Color.White :
+                            src   ? Color.FromArgb(255, 200, 0) :
+                            dst   ? Color.FromArgb(100, 255, 100) :
+                                    col;
+            int nodeA = flash ? 255 : 180;
+
+            float nr = 14;
+            using var nodeFill = new SolidBrush(Color.FromArgb(nodeA / 3, nodeCol));
+            using var nodePen  = new Pen(Color.FromArgb(nodeA, nodeCol), 1.5f);
+            g.FillRectangle(nodeFill, nx - nr, ny - nr / 2, nr * 2, nr);
+            g.DrawRectangle(nodePen,  nx - nr, ny - nr / 2, nr * 2, nr);
+
+            // Label
+            if (_monoFont != null)
+            {
+                using var lblBr = new SolidBrush(Color.FromArgb(nodeA, nodeCol));
+                float lblX = nx + (MathF.Cos(na) > 0 ? nr + 4 : -nr - 58);
+                float lblY = ny - _monoCharH / 2f;
+                g.DrawString(TokenNodes[i], _monoFont, lblBr, lblX, lblY);
+            }
+        }
+
+        // Title + activity
+        if (_monoFont != null)
+        {
+            using var lbBr = new SolidBrush(Color.FromArgb(70, col));
+            string status = _tokTransmitting
+                ? $"TX: {TokenNodes[_tokSrcNode]} -> {TokenNodes[_tokDstNode]}"
+                : "TOKEN IDLE";
+            g.DrawString($"CARDIFF TOKEN RING  //  4 MBPS  //  {status}",
+                _monoFont, lbBr, 14f, ClientSize.Height - _monoCharH - 10f);
         }
     }
 

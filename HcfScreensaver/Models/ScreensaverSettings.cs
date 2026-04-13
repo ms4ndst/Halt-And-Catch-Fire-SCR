@@ -16,7 +16,12 @@ public enum AnimationStyle
     VectorSpin,      // Rotating 3D wireframe objects with perspective projection
     OscilloScope,    // Lissajous figures on a CRT oscilloscope display
     DosShell,        // Extended DOS terminal session with commands and DEBUG
-    DiskMap          // Hard-disk sector map with scanning read/write head
+    DiskMap,         // Hard-disk sector map with scanning read/write head
+    AsteroidField,   // Vector-drawn rotating asteroids (Asteroids arcade aesthetic)
+    TankWars,        // Two tanks on terrain lobbing parabolic shells at each other
+    MutinyBBS,       // Dial-up modem → Mutiny BBS login session (HCF season 2)
+    SonarisGame,     // Breakout with HALT AND CATCH FIRE as bricks (Cameron's game)
+    TokenRing        // Token-ring LAN packet animation (Donna's network)
 }
 
 public sealed class ScreensaverSettings

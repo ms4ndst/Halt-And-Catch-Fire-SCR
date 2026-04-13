@@ -14,7 +14,7 @@ circuit-board traces, and the glitchy digital feel of machines that were pushed 
 
 ## Animations
 
-Twelve distinct animations, all rendered in the phosphor-green-on-black palette of period-authentic
+Seventeen distinct animations, all rendered in the phosphor-green-on-black palette of period-authentic
 80s computer terminals.
 
 | Animation | Description |
@@ -31,6 +31,11 @@ Twelve distinct animations, all rendered in the phosphor-green-on-black palette 
 | **OscilloScope** | Lissajous figures drawn on a CRT oscilloscope display complete with amber bezel, phosphor grid, and a rotating phase angle that continuously morphs the figure through 8 ratio presets |
 | **DosShell** | A full DOS terminal session plays out — `DIR`, `TYPE ROADMAP.TXT`, and a `DEBUG` session that disassembles the actual `HLT` + illegal opcode sequence at address `1A3F:0110` |
 | **DiskMap** | A hard-disk sector map showing data, system, fragmented, and free sectors with a scanning read/write head, cylinder/head/sector readout, and a live capacity bar |
+| **AsteroidField** | Vector-drawn asteroids drift and tumble across the screen in the style of the Asteroids arcade cabinet — wireframe polygons with a phosphor glow pass and bullet trails |
+| **TankWars** | Two pixel tanks face off across procedurally generated sine-wave terrain, lobbing parabolic shells at each other with authentic 8-bit explosion bursts |
+| **MutinyBBS** | A dial-up modem connection sequence plays out — `ATDT`, handshake tones, `CONNECT 2400` — landing on the Mutiny BBS login screen from *Halt and Catch Fire* season 2 |
+| **SonarisGame** | A Breakout clone where the bricks spell **HALT AND CATCH FIRE** — a nod to Cameron's Sonaris game featured throughout the series |
+| **TokenRing** | Cardiff Giant's token-ring LAN in motion: six nodes arranged in a ring with named stations (`GIANT-01`, `ROUTER`, `MODEM`, …) and animated packets racing around the loop |
 
 ---
 
@@ -94,7 +99,7 @@ opens the configuration panel.
 
 | Setting | Options | Default |
 |---|---|---|
-| Animation mode | 8 animations (see table above) | PhosphorDrift |
+| Animation mode | 17 animations (see table above) | PhosphorDrift |
 | Speed | 1 (slow) – 20 (fast) | 8 |
 | CRT intensity | 1 (subtle) – 5 (heavy) | 3 |
 | Phosphor colour | Green · Amber · White · Cyan · Custom | Green `#39FF14` |
@@ -126,7 +131,7 @@ HCF_screensaver/
 │   ├── Services/
 │   │   └── SettingsService.cs         JSON persistence → %LOCALAPPDATA%\HcfScreensaver\
 │   └── Forms/
-│       ├── ScreensaverForm.cs         Animation engine — all 8 animations
+│       ├── ScreensaverForm.cs         Animation engine — all 17 animations
 │       └── ConfigForm.cs              Terminal-aesthetic configuration UI
 └── Install-HcfScreensaver.ps1         Self-elevating build + install script
 ```

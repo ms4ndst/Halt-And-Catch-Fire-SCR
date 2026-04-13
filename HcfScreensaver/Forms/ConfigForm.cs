@@ -120,7 +120,12 @@ public sealed class ConfigForm : Form
             "VectorSpin     — 3D wireframe objects",
             "OscilloScope   — Lissajous waveforms",
             "DosShell       — DOS terminal session",
-            "DiskMap        — hard-disk sector map"
+            "DiskMap        — hard-disk sector map",
+            "AsteroidField  — vector asteroids",
+            "TankWars       — tank battle terrain",
+            "MutinyBBS      — dial-up BBS session",
+            "SonarisGame    — HALT AND CATCH FIRE breakout",
+            "TokenRing      — Cardiff LAN animation"
         ]);
         _animCombo.SelectedIndexChanged += (_, _) =>
         {
