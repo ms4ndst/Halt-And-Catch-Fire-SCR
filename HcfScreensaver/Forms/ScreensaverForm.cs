@@ -25,17 +25,6 @@ internal struct CompletedSeg
     public PointF A, B;
 }
 
-internal struct Asteroid
-{
-    public float    X, Y, VX, VY;
-    public float    Angle, AngVel;
-    public float    Scale;
-    public PointF[] Poly;    // normalized polygon verts (unit-radius-ish)
-    public int      Size;    // 0=large 1=medium 2=small
-    public float    Fade;    // 1=alive, fades to 0 when dying
-    public bool     Dying;
-}
-
 // ── Main form ────────────────────────────────────────────────────────────────
 
 public sealed class ScreensaverForm : Form
@@ -242,23 +231,6 @@ public sealed class ScreensaverForm : Form
     private int    _diskFlashSector = -1;
     private float  _diskFlashTimer;
 
-    // ── AsteroidField ─────────────────────────────────────────────────────────
-    private Asteroid[] _asteroids = [];
-    private float      _shipX, _shipY, _shipAngle;
-    private float      _shotX, _shotY, _shotDX, _shotDY, _shotLife;
-    private float      _shotCooldown;
-    private float      _astSplitTimer;
-
-    // ── TankWars ──────────────────────────────────────────────────────────────
-    private float[] _terrain   = [];
-    private float   _tw1X, _tw2X;
-    private float   _twProjX, _twProjY, _twProjVX, _twProjVY;
-    private bool    _twProjActive;
-    private float   _twFireTimer;
-    private int     _twTurn;          // 0 = tank1 fires, 1 = tank2 fires
-    private float   _twExplX, _twExplY, _twExplR, _twExplTimer;
-    private int     _twScore1, _twScore2;
-
     // ── MutinyBBS ─────────────────────────────────────────────────────────────
     private int   _bbsPhase, _bbsLineIdx, _bbsCharIdx;
     private float _bbsAccum, _bbsCursorAccum;
@@ -323,6 +295,95 @@ public sealed class ScreensaverForm : Form
 
     private static readonly string[] TokenNodes =
         ["GIANT-01", "GIANT-02", "GIANT-03", "ROUTER", "MODEM", "GIANT-04"];
+
+    // ── PixieGame ─────────────────────────────────────────────────────────────
+    private int   _pixWayptIdx;
+    private int   _pixPlayerRow, _pixPlayerCol;
+    private float _pixMoveTimer;
+    private int   _pixMsgPhase, _pixMsgLineIdx, _pixMsgCharIdx;
+    private float _pixMsgAccum, _pixMsgCursorAccum;
+    private bool  _pixMsgCursor;
+    private float _pixHoldAccum, _pixFadeAlpha = 1f;
+    private readonly List<string> _pixDone = [];
+
+    private static readonly string[] PixieMap =
+    [
+        "##############################",
+        "#............#...............#",
+        "#............#...............#",
+        "#....MACHINE.+....BIOS.VAULT.#",
+        "#............#...............#",
+        "#............#...............#",
+        "####.#########.###############",
+        "#....#                        ",
+        "#....#   ######################",
+        "#....+...+....................#",
+        "#....#   #....SERVER.ROOM.....#",
+        "#....#   #....................#",
+        "######   #....M...............#",
+        "         ######################",
+    ];
+
+    // Player waypoints (row, col) through the dungeon
+    private static readonly (int r, int c)[] PixieWaypoints =
+        [(3,4),(3,16),(5,16),(9,4),(9,16),(12,16),(9,16),(3,16),(3,4)];
+
+    private static readonly string[] PixieMsgs =
+    [
+        "> LOOK",
+        "You stand in the MACHINE ROOM.",
+        "An IBM PC hums in the corner.",
+        "Exits: EAST, SOUTH.",
+        "",
+        "> GO EAST",
+        "You enter the BIOS VAULT.",
+        "Rows of ROM chips line the walls.",
+        "> EXAMINE ROM",
+        "CARDIFF GIANT BIOS v0.9 BETA",
+        "WARNING: Undocumented opcodes present.",
+        "",
+        "> GO SOUTH",
+        "Descending into the SERVER ROOM...",
+        "A STACK OVERFLOW blocks your path!",
+        "> ATTACK STACK OVERFLOW",
+        "Critical hit! You wield ASSEMBLY CODE.",
+        "STACK OVERFLOW is destroyed.",
+        "You find: DEBUGGING TOKEN (x1)",
+        "",
+        "> GO NORTH",
+        "> GO WEST",
+        "You return to the MACHINE ROOM.",
+        "> EXAMINE TERMINAL",
+        "The screen shows: HALT AND CATCH FIRE",
+        "** PROCESSOR HALTED **",
+        "",
+    ];
+
+    // ── GiantCalc ─────────────────────────────────────────────────────────────
+    private int   _calcFillStep;
+    private float _calcFillTimer;
+    private int   _calcCurRow, _calcCurCol;
+    private float _calcNavTimer;
+    private bool  _calcCurBlink;
+    private float _calcCurTimer;
+    private float _calcFadeAlpha = 1f;
+
+    // (row, col, value) — row 0 = header row, rows 1..N = data
+    private static readonly (int r, int c, string v)[] CalcData =
+    [
+        (0, 0, "CARDIFF GIANT COMPUTING — Q3 1983"),
+        (1, 0, "FINANCIAL SUMMARY (CONFIDENTIAL)"),
+        (3, 0, "Category"),   (3, 1, "Jul"),     (3, 2, "Aug"),     (3, 3, "Sep"),     (3, 4, "TOTAL"),
+        (4, 0, "Revenue"),    (4, 1, "48,200"),   (4, 2, "52,800"),  (4, 3, "61,400"),  (4, 4, "=SUM(B5:D5)"),
+        (5, 0, "Hardware"),   (5, 1, "24,100"),   (5, 2, "26,400"),  (5, 3, "30,700"),  (5, 4, "=SUM(B6:D6)"),
+        (6, 0, "Software"),   (6, 1, "12,000"),   (6, 2, "13,200"),  (6, 3, "15,350"),  (6, 4, "=SUM(B7:D7)"),
+        (7, 0, "Services"),   (7, 1, "12,100"),   (7, 2, "13,200"),  (7, 3, "15,350"),  (7, 4, "=SUM(B8:D8)"),
+        (9, 0, "COGS"),       (9, 1, "36,480"),   (9, 2, "39,600"),  (9, 3, "45,900"),  (9, 4, "=SUM(B10:D10)"),
+        (11, 0, "Net"),       (11, 1, "11,720"),  (11, 2, "13,200"), (11, 3, "15,500"), (11, 4, "=SUM(B12:D12)"),
+        (13, 0, "Target Q4"), (13, 1, "75,000"),
+        (14, 0, "Variance"),  (14, 1, "=B14-B5"),
+        (16, 0, "Status:"),   (16, 1, "ON TRACK — ship Q1 1984"),
+    ];
 
     // ─────────────────────────────────────────────────────────────────────────
     // Construction
@@ -512,28 +573,6 @@ public sealed class ScreensaverForm : Form
         _diskFlashSector = -1;
         _diskFlashTimer  = 0f;
 
-        // AsteroidField
-        _shipX = ClientSize.Width / 2f;
-        _shipY = ClientSize.Height / 2f;
-        _shipAngle  = 0f;
-        _shotLife   = 0f;
-        _shotCooldown = 0f;
-        _astSplitTimer  = 60f;
-        _asteroids = new Asteroid[8];
-        for (int i = 0; i < _asteroids.Length; i++)
-            _asteroids[i] = MakeAsteroid(
-                _rng.Next(ClientSize.Width), _rng.Next(ClientSize.Height), 0);
-
-        // TankWars
-        GenerateTerrain();
-        _tw1X = ClientSize.Width * 0.18f;
-        _tw2X = ClientSize.Width * 0.82f;
-        _twProjActive = false;
-        _twFireTimer  = 60f;
-        _twTurn       = 0;
-        _twExplTimer  = 0f;
-        _twScore1     = 0; _twScore2 = 0;
-
         // MutinyBBS
         _bbsPhase = 0; _bbsLineIdx = 0; _bbsCharIdx = 0;
         _bbsAccum = 0f; _bbsCursor = true; _bbsFadeAlpha = 1f;
@@ -556,6 +595,25 @@ public sealed class ScreensaverForm : Form
         _tokTransmitting = false;
         _tokFlashTimer  = 0f;
         _tokFlashNode   = -1;
+
+        // PixieGame
+        _pixWayptIdx   = 0;
+        _pixPlayerRow  = PixieWaypoints[0].r;
+        _pixPlayerCol  = PixieWaypoints[0].c;
+        _pixMoveTimer  = 120f;
+        _pixMsgPhase   = 0; _pixMsgLineIdx = 0; _pixMsgCharIdx = 0;
+        _pixMsgAccum   = 0f; _pixMsgCursor = true; _pixFadeAlpha = 1f;
+        _pixHoldAccum  = 0f;
+        _pixDone.Clear();
+
+        // GiantCalc
+        _calcFillStep  = 0;
+        _calcFillTimer = 0f;
+        _calcCurRow    = 4; _calcCurCol = 1;
+        _calcNavTimer  = 120f;
+        _calcCurBlink  = true;
+        _calcCurTimer  = 0f;
+        _calcFadeAlpha = 1f;
 
         _lastMousePosition = Point.Empty;
     }
@@ -586,11 +644,11 @@ public sealed class ScreensaverForm : Form
             case AnimationStyle.OscilloScope:   DrawOscilloScope(g);         break;
             case AnimationStyle.DosShell:       DrawDosShell(g);             break;
             case AnimationStyle.DiskMap:        DrawDiskMap(g);              break;
-            case AnimationStyle.AsteroidField:  DrawAsteroidField(g);        break;
-            case AnimationStyle.TankWars:       DrawTankWars(g);             break;
             case AnimationStyle.MutinyBBS:      DrawMutinyBBS(g);            break;
             case AnimationStyle.SonarisGame:    DrawSonarisGame(g);          break;
             case AnimationStyle.TokenRing:      DrawTokenRing(g);            break;
+            case AnimationStyle.PixieGame:      DrawPixieGame(g);            break;
+            case AnimationStyle.GiantCalc:      DrawGiantCalc(g);            break;
         }
     }
 
@@ -617,11 +675,11 @@ public sealed class ScreensaverForm : Form
             case AnimationStyle.OscilloScope:  UpdateOscilloScope(speed); break;
             case AnimationStyle.DosShell:      UpdateDosShell(speed);     break;
             case AnimationStyle.DiskMap:       UpdateDiskMap(speed);      break;
-            case AnimationStyle.AsteroidField: UpdateAsteroidField(speed); break;
-            case AnimationStyle.TankWars:      UpdateTankWars(speed);     break;
             case AnimationStyle.MutinyBBS:     UpdateMutinyBBS(speed);    break;
             case AnimationStyle.SonarisGame:   UpdateSonarisGame(speed);  break;
             case AnimationStyle.TokenRing:     UpdateTokenRing(speed);    break;
+            case AnimationStyle.PixieGame:     UpdatePixieGame(speed);    break;
+            case AnimationStyle.GiantCalc:     UpdateGiantCalc(speed);    break;
         }
     }
 
@@ -1581,298 +1639,339 @@ public sealed class ScreensaverForm : Form
     }
 
     // =========================================================================
-    // AsteroidField
+    // PixieGame
     // =========================================================================
 
-    private Asteroid MakeAsteroid(float x, float y, int size)
+    private void UpdatePixieGame(float speed)
     {
-        float scale = size == 0 ? 44f : size == 1 ? 24f : 13f;
-        int n = 7 + _rng.Next(3);
-        var poly = new PointF[n];
-        for (int i = 0; i < n; i++)
-        {
-            float a = i * MathF.PI * 2 / n;
-            float r = 0.65f + (float)_rng.NextDouble() * 0.35f;
-            poly[i] = new PointF(MathF.Cos(a) * r, MathF.Sin(a) * r);
-        }
-        return new Asteroid
-        {
-            X = x, Y = y,
-            VX = (_rng.Next(2) == 0 ? 1 : -1) * (0.3f + (float)_rng.NextDouble() * 0.9f),
-            VY = (_rng.Next(2) == 0 ? 1 : -1) * (0.3f + (float)_rng.NextDouble() * 0.9f),
-            Angle   = (float)_rng.NextDouble() * MathF.PI * 2,
-            AngVel  = ((float)_rng.NextDouble() - 0.5f) * 0.04f,
-            Scale   = scale,
-            Poly    = poly,
-            Size    = size,
-            Fade    = 1f,
-            Dying   = false
-        };
-    }
+        const float CharsPerSec = 44f;
+        float dt = speed / 60f;
 
-    private void UpdateAsteroidField(float speed)
-    {
-        float w = ClientSize.Width, h = ClientSize.Height;
+        // Cursor blink
+        _pixMsgCursorAccum += dt;
+        if (_pixMsgCursorAccum > 0.5f) { _pixMsgCursor = !_pixMsgCursor; _pixMsgCursorAccum = 0f; }
 
-        // Rotate ship slowly, fire periodically
-        _shipAngle  += 0.008f * speed;
-        _shotCooldown -= speed;
-        if (_shotCooldown <= 0f)
+        switch (_pixMsgPhase)
         {
-            _shotX  = _shipX; _shotY = _shipY;
-            _shotDX = MathF.Cos(_shipAngle) * 8f;
-            _shotDY = MathF.Sin(_shipAngle) * 8f;
-            _shotLife = 60f;
-            _shotCooldown = 80f + _rng.Next(60);
-        }
-        if (_shotLife > 0) { _shotX += _shotDX * speed; _shotY += _shotDY * speed; _shotLife -= speed; }
-
-        // Advance asteroids
-        for (int i = 0; i < _asteroids.Length; i++)
-        {
-            ref var a = ref _asteroids[i];
-            a.X     = ((a.X + a.VX * speed) % w + w) % w;
-            a.Y     = ((a.Y + a.VY * speed) % h + h) % h;
-            a.Angle += a.AngVel * speed;
-            if (a.Dying) { a.Fade -= 0.04f * speed; if (a.Fade <= 0) a.Dying = false; }
-        }
-
-        // Periodically split a large asteroid
-        _astSplitTimer -= speed;
-        if (_astSplitTimer <= 0f)
-        {
-            _astSplitTimer = 120f + _rng.Next(180);
-            // Find a large living asteroid
-            for (int i = 0; i < _asteroids.Length; i++)
-            {
-                if (_asteroids[i].Size == 0 && !_asteroids[i].Dying)
+            case 0: // typing messages
+                _pixMsgAccum += CharsPerSec * dt;
+                while (_pixMsgAccum >= 1f && _pixMsgLineIdx < PixieMsgs.Length)
                 {
-                    float sx = _asteroids[i].X, sy = _asteroids[i].Y;
-                    _asteroids[i].Dying = true;
-                    // Replace two medium ones in empty slots (or reuse the dying slot next frame)
-                    for (int j = 0; j < _asteroids.Length; j++)
+                    _pixMsgAccum -= 1f;
+                    string line = PixieMsgs[_pixMsgLineIdx];
+                    if (_pixMsgCharIdx < line.Length)
                     {
-                        if (!_asteroids[j].Dying && _rng.Next(8) == 0)
-                        {
-                            _asteroids[j] = MakeAsteroid(sx + _rng.Next(40) - 20, sy + _rng.Next(40) - 20, 1);
-                            break;
-                        }
+                        _pixMsgCharIdx++;
                     }
-                    break;
+                    else
+                    {
+                        _pixDone.Add(line);
+                        _pixMsgLineIdx++;
+                        _pixMsgCharIdx = 0;
+                        // Pause on empty lines
+                        if (_pixMsgLineIdx < PixieMsgs.Length && PixieMsgs[_pixMsgLineIdx].Length == 0)
+                            _pixMsgAccum -= 15f;
+                    }
                 }
-            }
-        }
-        // Respawn dead asteroids as new large ones at edge
-        for (int i = 0; i < _asteroids.Length; i++)
-        {
-            if (!_asteroids[i].Dying && _asteroids[i].Fade <= 0)
-            {
-                float ex = _rng.Next(2) == 0 ? 0 : w;
-                float ey = (float)_rng.NextDouble() * h;
-                _asteroids[i] = MakeAsteroid(ex, ey, 0);
-            }
-        }
-    }
+                if (_pixMsgLineIdx >= PixieMsgs.Length)
+                    _pixMsgPhase = 1;
+                break;
 
-    private void DrawAsteroidField(Graphics g)
-    {
-        var col = _settings.TextColor;
+            case 1: // hold
+                _pixHoldAccum += dt;
+                if (_pixHoldAccum > 2.5f) _pixMsgPhase = 2;
+                break;
 
-        // Ship — classic triangle
-        float sa = _shipAngle;
-        var shipPts = new PointF[]
-        {
-            new(_shipX + MathF.Cos(sa) * 14, _shipY + MathF.Sin(sa) * 14),
-            new(_shipX + MathF.Cos(sa + 2.4f) * 9, _shipY + MathF.Sin(sa + 2.4f) * 9),
-            new(_shipX + MathF.Cos(sa - 2.4f) * 9, _shipY + MathF.Sin(sa - 2.4f) * 9)
-        };
-        using var shipPen = new Pen(Color.FromArgb(220, col), 1.5f);
-        using var shipGlow = new Pen(Color.FromArgb(35, col), 5f);
-        g.DrawPolygon(shipGlow, shipPts);
-        g.DrawPolygon(shipPen, shipPts);
-
-        // Shot
-        if (_shotLife > 0)
-        {
-            using var shotBr = new SolidBrush(Color.White);
-            g.FillEllipse(shotBr, _shotX - 3, _shotY - 3, 6, 6);
-        }
-
-        // Asteroids
-        foreach (ref var ast in _asteroids.AsSpan())
-        {
-            if (ast.Poly == null || (!ast.Dying && ast.Fade <= 0)) continue;
-            float fade = ast.Dying ? Math.Max(0, ast.Fade) : 1f;
-            int n = ast.Poly.Length;
-            var pts = new PointF[n];
-            for (int i = 0; i < n; i++)
-            {
-                float px = ast.Poly[i].X * MathF.Cos(ast.Angle) - ast.Poly[i].Y * MathF.Sin(ast.Angle);
-                float py = ast.Poly[i].X * MathF.Sin(ast.Angle) + ast.Poly[i].Y * MathF.Cos(ast.Angle);
-                pts[i] = new PointF(ast.X + px * ast.Scale, ast.Y + py * ast.Scale);
-            }
-            using var pen  = new Pen(Color.FromArgb((int)(200 * fade), col), 1.5f);
-            using var glow = new Pen(Color.FromArgb((int)(28 * fade), col), 5f);
-            g.DrawPolygon(glow, pts);
-            g.DrawPolygon(pen,  pts);
-        }
-
-        // Label
-        if (_monoFont != null)
-        {
-            using var lbBr = new SolidBrush(Color.FromArgb(70, col));
-            g.DrawString("GIANT ARCADE  //  1 PLAYER  //  INSERT COIN",
-                _monoFont, lbBr, 14f, ClientSize.Height - _monoCharH - 10f);
-        }
-    }
-
-    // =========================================================================
-    // TankWars
-    // =========================================================================
-
-    private void GenerateTerrain()
-    {
-        int w = Math.Max(1, ClientSize.Width);
-        _terrain = new float[w];
-        float baseH = ClientSize.Height * 0.68f;
-        float a1 = ClientSize.Height * 0.07f, a2 = ClientSize.Height * 0.04f;
-        float f1 = MathF.PI * 2 * 2.5f / w, f2 = MathF.PI * 2 * 5f / w;
-        float p1 = (float)_rng.NextDouble() * MathF.PI * 2;
-        float p2 = (float)_rng.NextDouble() * MathF.PI * 2;
-        for (int x = 0; x < w; x++)
-            _terrain[x] = baseH + a1 * MathF.Sin(x * f1 + p1) + a2 * MathF.Sin(x * f2 + p2);
-    }
-
-    private float TerrainAt(float x) =>
-        _terrain.Length == 0 ? 0 : _terrain[Math.Clamp((int)x, 0, _terrain.Length - 1)];
-
-    private void UpdateTankWars(float speed)
-    {
-        _twFireTimer -= speed;
-
-        // Explosion decay
-        if (_twExplTimer > 0) _twExplTimer -= speed;
-
-        if (_twProjActive)
-        {
-            _twProjVY += 0.18f * speed;   // gravity
-            _twProjX  += _twProjVX * speed;
-            _twProjY  += _twProjVY * speed;
-
-            float terY = TerrainAt(_twProjX);
-            bool outOfBounds = _twProjX < 0 || _twProjX >= ClientSize.Width || _twProjY > ClientSize.Height;
-            if (_twProjY >= terY || outOfBounds)
-            {
-                _twProjActive = false;
-                _twExplX = _twProjX; _twExplY = MathF.Min(_twProjY, terY);
-                _twExplR = 0f; _twExplTimer = 40f;
-
-                // Check hit on the other tank
-                float hitX = _twTurn == 0 ? _tw2X : _tw1X;
-                if (MathF.Abs(_twProjX - hitX) < 30)
+            case 2: // fade out
+                _pixFadeAlpha -= 0.015f * speed;
+                if (_pixFadeAlpha <= 0f)
                 {
-                    if (_twTurn == 0) _twScore1++; else _twScore2++;
+                    _pixFadeAlpha  = 1f; _pixMsgPhase = 0;
+                    _pixMsgLineIdx = 0;  _pixMsgCharIdx = 0;
+                    _pixHoldAccum  = 0f; _pixDone.Clear();
+                    _pixWayptIdx   = 0;
+                    _pixPlayerRow  = PixieWaypoints[0].r;
+                    _pixPlayerCol  = PixieWaypoints[0].c;
+                    _pixMoveTimer  = 120f;
                 }
-
-                _twTurn     = 1 - _twTurn;
-                _twFireTimer = 80f + _rng.Next(60);
-            }
+                break;
         }
-        else if (_twFireTimer <= 0f)
+
+        // Move player toward next waypoint
+        _pixMoveTimer -= speed;
+        if (_pixMoveTimer <= 0f)
         {
-            // Fire
-            float srcX  = _twTurn == 0 ? _tw1X : _tw2X;
-            float dstX  = _twTurn == 0 ? _tw2X : _tw1X;
-            float srcY  = TerrainAt(srcX);
-            float dstY  = TerrainAt(dstX);
-            float dir   = dstX > srcX ? 1f : -1f;
-            float dist  = MathF.Abs(dstX - srcX);
-            float spd   = 5f + dist * 0.012f + (float)_rng.NextDouble() * 2f;
-            float angle = MathF.Atan2(srcY - dstY, dstX - srcX)
-                          - (0.3f + (float)_rng.NextDouble() * 0.25f);
-            _twProjX  = srcX; _twProjY = srcY - 14f;
-            _twProjVX = MathF.Cos(angle) * spd * dir;
-            _twProjVY = -MathF.Sin(angle) * spd;
-            _twProjActive = true;
+            _pixMoveTimer = 55f + _rng.Next(30);
+            int nextWp = (_pixWayptIdx + 1) % PixieWaypoints.Length;
+            var wp = PixieWaypoints[nextWp];
+            // Step one cell toward waypoint
+            int dr = Math.Sign(wp.r - _pixPlayerRow);
+            int dc = Math.Sign(wp.c - _pixPlayerCol);
+            if (dr != 0) _pixPlayerRow += dr;
+            else if (dc != 0) _pixPlayerCol += dc;
+            // Check if reached waypoint
+            if (_pixPlayerRow == wp.r && _pixPlayerCol == wp.c)
+                _pixWayptIdx = nextWp;
         }
-
-        // Grow explosion radius
-        if (_twExplTimer > 0) _twExplR = Math.Min(40f, _twExplR + 2f * speed);
     }
 
-    private void DrawTankWars(Graphics g)
+    private void DrawPixieGame(Graphics g)
     {
-        var col = _settings.TextColor;
+        if (_monoFont == null) return;
+        var col    = _settings.TextColor;
+        int alpha  = (int)(255 * _pixFadeAlpha);
+        if (alpha < 2) return;
 
-        // Sky gradient hint (optional subtle bands)
-        // Terrain polygon — fill below terrain line
-        int w = ClientSize.Width;
-        if (_terrain.Length >= w)
+        // Layout: map in top ~58%, divider, messages in bottom ~37%
+        int mapH   = (int)(ClientSize.Height * 0.56f);
+        int mapRows = PixieMap.Length;
+        int mapCols = PixieMap.Max(l => l.Length);
+
+        // Scale map chars to fit area
+        float cw = (float)ClientSize.Width  / mapCols;
+        float ch = (float)mapH              / mapRows;
+        float cellSz = Math.Max(4f, Math.Min(cw, ch));
+
+        float mapOffX = (ClientSize.Width  - cellSz * mapCols) / 2f;
+        float mapOffY = 10f;
+
+        // Draw map
+        using var wallBr   = new SolidBrush(Color.FromArgb(alpha, col));
+        using var floorBr  = new SolidBrush(Color.FromArgb(alpha / 5, col));
+        using var playerBr = new SolidBrush(Color.White);
+        using var enemyBr  = new SolidBrush(Color.FromArgb(alpha, 255, 80, 80));
+        using var mapFont  = new Font("Courier New", cellSz * 0.72f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+        for (int row = 0; row < PixieMap.Length; row++)
         {
-            var terPts = new PointF[w + 2];
-            for (int x = 0; x < w; x++) terPts[x] = new PointF(x, _terrain[x]);
-            terPts[w]     = new PointF(w, ClientSize.Height);
-            terPts[w + 1] = new PointF(0, ClientSize.Height);
-            using var terFill = new SolidBrush(Color.FromArgb(18, col));
-            g.FillPolygon(terFill, terPts);
-            using var terPen = new Pen(Color.FromArgb(160, col), 1.5f);
-            var linePts = new PointF[w];
-            for (int x = 0; x < w; x++) linePts[x] = new PointF(x, _terrain[x]);
-            g.DrawLines(terPen, linePts);
+            string line = PixieMap[row];
+            for (int col2 = 0; col2 < line.Length; col2++)
+            {
+                char mc = line[col2];
+                float px = mapOffX + col2 * cellSz;
+                float py = mapOffY + row  * cellSz;
+
+                // Overlay player
+                if (row == _pixPlayerRow && col2 == _pixPlayerCol)
+                {
+                    g.DrawString("@", mapFont, playerBr, px, py);
+                    continue;
+                }
+
+                if (mc == '#')
+                    g.DrawString("#", mapFont, wallBr, px, py);
+                else if (mc == 'M')
+                    g.DrawString("M", mapFont, enemyBr, px, py);
+                else if (mc == '+')
+                    g.DrawString("+", mapFont, wallBr, px, py);
+                else if (mc == '.')
+                    g.DrawString("·", mapFont, floorBr, px, py);
+            }
         }
 
-        // Tank helper
-        void DrawTank(float tx, bool right)
+        // Divider
+        float divY = mapOffY + PixieMap.Length * cellSz + 6f;
+        using var divPen = new Pen(Color.FromArgb(alpha / 2, col), 1f);
+        g.DrawLine(divPen, 0, divY, ClientSize.Width, divY);
+
+        // Messages area
+        float msgX   = 18f;
+        float msgY   = divY + 6f;
+        float msgH   = ClientSize.Height - msgY - 30f;
+        int maxLines = (int)(msgH / _monoCharH);
+        if (maxLines < 1) maxLines = 1;
+
+        using var msgBr  = new SolidBrush(Color.FromArgb(alpha, col));
+        using var cmdBr  = new SolidBrush(Color.FromArgb(alpha, Color.White));
+
+        // Collect visible lines (last maxLines from done + current partial)
+        var vis = new List<string>(_pixDone);
+        if (_pixMsgLineIdx < PixieMsgs.Length)
+            vis.Add(PixieMsgs[_pixMsgLineIdx][.._pixMsgCharIdx]);
+
+        int start = Math.Max(0, vis.Count - maxLines);
+        for (int i = start; i < vis.Count; i++)
         {
-            float ty = TerrainAt(tx);
-            float bw = 28, bh = 11;
-            using var bodyFill = new SolidBrush(Color.FromArgb(50, col));
-            using var bodyPen  = new Pen(Color.FromArgb(200, col), 1.5f);
-            g.FillRectangle(bodyFill, tx - bw / 2, ty - bh, bw, bh);
-            g.DrawRectangle(bodyPen,  tx - bw / 2, ty - bh, bw, bh);
-            // Barrel
-            float ba = right ? -MathF.PI * 0.3f : -MathF.PI * 0.7f;
-            float blen = 18;
-            g.DrawLine(bodyPen, tx, ty - bh, tx + MathF.Cos(ba) * blen, ty - bh + MathF.Sin(ba) * blen);
-            // Treads
-            using var treadPen = new Pen(Color.FromArgb(130, col), 3f);
-            g.DrawLine(treadPen, tx - bw / 2 - 3, ty, tx + bw / 2 + 3, ty);
+            string l = vis[i];
+            bool isCmd = l.StartsWith('>');
+            float ly = msgY + (i - start) * _monoCharH;
+            if (ly + _monoCharH > ClientSize.Height) break;
+            using var br = isCmd ? new SolidBrush(Color.FromArgb(alpha, Color.White))
+                                 : new SolidBrush(Color.FromArgb(alpha, col));
+            g.DrawString(l, _monoFont, br, msgX, ly);
+        }
+        // Cursor on last line
+        if (_pixMsgCursor && _pixMsgPhase == 0)
+        {
+            int lastI = Math.Min(vis.Count - 1, start + maxLines - 1);
+            float cursorY = msgY + (Math.Min(vis.Count, maxLines) - 1) * _monoCharH;
+            if (cursorY < ClientSize.Height - _monoCharH)
+            {
+                string lastLine = vis.Count > 0 ? vis[^1] : "";
+                float cursorX   = msgX + g.MeasureString(lastLine, _monoFont).Width;
+                using var curBr = new SolidBrush(Color.FromArgb(alpha, col));
+                g.FillRectangle(curBr, cursorX, cursorY, _monoCharW, _monoCharH - 2);
+            }
         }
 
-        DrawTank(_tw1X, true);
-        DrawTank(_tw2X, false);
+        // Title bar
+        using var lbBr = new SolidBrush(Color.FromArgb(Math.Max(0, alpha - 100), col));
+        g.DrawString("PIXIE v1.2  //  MUTINY ONLINE  //  1987",
+            _monoFont, lbBr, 14f, ClientSize.Height - _monoCharH - 8f);
+    }
 
-        // Projectile
-        if (_twProjActive)
+    // =========================================================================
+    // GiantCalc
+    // =========================================================================
+
+    private void UpdateGiantCalc(float speed)
+    {
+        float dt = speed / 60f;
+
+        // Cursor blink
+        _calcCurTimer += dt;
+        if (_calcCurTimer > 0.5f) { _calcCurBlink = !_calcCurBlink; _calcCurTimer = 0f; }
+
+        // Fill cells progressively
+        if (_calcFillStep < CalcData.Length)
         {
-            using var projBr = new SolidBrush(Color.White);
-            g.FillEllipse(projBr, _twProjX - 3, _twProjY - 3, 6, 6);
+            _calcFillTimer += speed;
+            if (_calcFillTimer >= 8f)
+            {
+                _calcFillTimer = 0f;
+                _calcFillStep++;
+            }
+            return;
         }
 
-        // Explosion
-        if (_twExplTimer > 0 && _twExplR > 0)
+        // Navigate cursor
+        _calcNavTimer -= speed;
+        if (_calcNavTimer <= 0f)
         {
-            float alpha = _twExplTimer / 40f;
-            using var exPen = new Pen(Color.FromArgb((int)(180 * alpha), col), 2f);
-            using var exGlow = new Pen(Color.FromArgb((int)(50 * alpha), col), 8f);
-            g.DrawEllipse(exGlow, _twExplX - _twExplR, _twExplY - _twExplR, _twExplR * 2, _twExplR * 2);
-            g.DrawEllipse(exPen, _twExplX - _twExplR, _twExplY - _twExplR, _twExplR * 2, _twExplR * 2);
+            _calcNavTimer = 50f + _rng.Next(80);
+            // Pick a random filled cell
+            int idx = _rng.Next(CalcData.Length);
+            _calcCurRow = CalcData[idx].r;
+            _calcCurCol = CalcData[idx].c;
         }
 
-        // Score
-        if (_monoFont != null)
+        // Fade and restart
+        if (_calcFillStep >= CalcData.Length + 200)
         {
-            using var scoreBr = new SolidBrush(Color.FromArgb(170, col));
-            g.DrawString($"TANK-1: {_twScore1:D2}", _monoFont, scoreBr, 20f, 14f);
-            using var scoreBr2 = new SolidBrush(Color.FromArgb(170, col));
-            var s2 = $"TANK-2: {_twScore2:D2}";
-            using var measG = CreateGraphics();
-            var sz = measG.MeasureString(s2, _monoFont);
-            g.DrawString(s2, _monoFont, scoreBr2, ClientSize.Width - sz.Width - 20f, 14f);
-            using var titleBr = new SolidBrush(Color.FromArgb(60, col));
-            g.DrawString("TANKWARS  //  CARDIFF GIANT  //  1984",
-                _monoFont, titleBr, 20f, ClientSize.Height - _monoCharH - 10f);
+            _calcFadeAlpha -= 0.012f * speed;
+            if (_calcFadeAlpha <= 0f)
+            {
+                _calcFadeAlpha = 1f;
+                _calcFillStep  = 0;
+                _calcFillTimer = 0f;
+                _calcCurRow    = 4; _calcCurCol = 1;
+                _calcNavTimer  = 120f;
+            }
         }
+        else
+        {
+            _calcFillStep++;  // keep counting past filled to trigger fade
+        }
+    }
+
+    private void DrawGiantCalc(Graphics g)
+    {
+        if (_monoFont == null) return;
+        var col   = _settings.TextColor;
+        int alpha = (int)(255 * _calcFadeAlpha);
+        if (alpha < 2) return;
+
+        // Layout parameters
+        int colCount  = 5;   // columns A-E
+        int rowCount  = 18;
+        float marginL = 18f;
+        float marginT = 48f;
+        float colW0   = _monoCharW * 11;  // row-number + label column
+        float colW    = _monoCharW * 12;  // data columns
+        float rowH    = _monoCharH + 2f;
+        float totalW  = marginL + colW0 + colW * (colCount - 1);
+
+        // Title bar
+        using var titleBr = new SolidBrush(Color.FromArgb(alpha, col));
+        using var titleFt = new Font("Courier New", 10f, FontStyle.Bold);
+        g.DrawString("GIANTCALC 1.0  //  CARDIFF GIANT COMPUTING  //  1983",
+            titleFt, titleBr, marginL, 8f);
+
+        // Formula bar: show value of cursor cell
+        string curVal = "";
+        string curRef = $"{(char)('A' + _calcCurCol)}{_calcCurRow + 1}";
+        foreach (var (r, c, v) in CalcData)
+            if (r == _calcCurRow && c == _calcCurCol) { curVal = v; break; }
+        using var fbarBr = new SolidBrush(Color.FromArgb(alpha * 3 / 4, col));
+        g.DrawString($"  {curRef}: {curVal}", _monoFont, fbarBr, marginL, 28f);
+
+        // Column headers
+        float hdrY = marginT;
+        using var hdrBr  = new SolidBrush(Color.FromArgb(alpha, col));
+        using var hdrPen = new Pen(Color.FromArgb(alpha / 2, col), 1f);
+        // Row-number header cell
+        g.DrawString("    ", _monoFont, hdrBr, marginL, hdrY);
+        for (int c = 0; c < colCount; c++)
+        {
+            float hx = marginL + colW0 + c * colW;
+            string lbl = ((char)('A' + c)).ToString().PadRight(12);
+            g.DrawString(lbl, _monoFont, hdrBr, hx, hdrY);
+        }
+        // Horizontal rule under headers
+        g.DrawLine(hdrPen, marginL, hdrY + rowH - 1, totalW, hdrY + rowH - 1);
+
+        // Build visible cell map from filled data
+        var cells = new Dictionary<(int, int), string>();
+        int filled = Math.Min(_calcFillStep, CalcData.Length);
+        for (int i = 0; i < filled; i++)
+            cells[(CalcData[i].r, CalcData[i].c)] = CalcData[i].v;
+
+        // Draw rows
+        for (int row = 0; row < rowCount; row++)
+        {
+            float ry = marginT + rowH + row * rowH;
+            if (ry + rowH > ClientSize.Height - 30f) break;
+
+            // Row number
+            using var rnBr = new SolidBrush(Color.FromArgb(alpha / 2, col));
+            g.DrawString($"{row + 1,3} ", _monoFont, rnBr, marginL, ry);
+
+            for (int c = 0; c < colCount; c++)
+            {
+                float cx2 = marginL + colW0 + c * colW;
+                bool isCur = row == _calcCurRow && c == _calcCurCol;
+
+                if (isCur && _calcCurBlink && _calcFillStep >= CalcData.Length)
+                {
+                    // Highlight current cell
+                    using var curFill = new SolidBrush(Color.FromArgb(alpha / 5, col));
+                    g.FillRectangle(curFill, cx2 - 1, ry - 1, colW - 2, rowH);
+                    using var curPen = new Pen(Color.FromArgb(alpha, col), 1f);
+                    g.DrawRectangle(curPen, cx2 - 1, ry - 1, colW - 2, rowH);
+                }
+
+                if (cells.TryGetValue((row, c), out string? val))
+                {
+                    bool isFormula = val.StartsWith('=');
+                    int  cellAlpha = isCur ? alpha : (int)(alpha * 0.85f);
+                    Color cellCol  = isFormula ? Color.FromArgb(cellAlpha, Amber)
+                                               : Color.FromArgb(cellAlpha, col);
+                    using var cellBr = new SolidBrush(cellCol);
+                    string display = val.Length > 11 ? val[..11] : val;
+                    g.DrawString(display, _monoFont, cellBr, cx2, ry);
+                }
+            }
+
+            // Vertical divider after label column
+            using var vPen = new Pen(Color.FromArgb(alpha / 4, col), 1f);
+            g.DrawLine(vPen, marginL + colW0 - 4, marginT, marginL + colW0 - 4, ry + rowH);
+        }
+
+        // Status bar
+        using var stBr = new SolidBrush(Color.FromArgb(alpha * 2 / 3, col));
+        string status = _calcFillStep < CalcData.Length ? "LOADING..." : "READY";
+        g.DrawString($"  {status}  [F9=Recalc]  [F10=Menu]  CARDIFF GIANT COMPUTING CORP.",
+            _monoFont, stBr, marginL, ClientSize.Height - _monoCharH - 8f);
     }
 
     // =========================================================================

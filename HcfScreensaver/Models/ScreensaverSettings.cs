@@ -17,11 +17,11 @@ public enum AnimationStyle
     OscilloScope,    // Lissajous figures on a CRT oscilloscope display
     DosShell,        // Extended DOS terminal session with commands and DEBUG
     DiskMap,         // Hard-disk sector map with scanning read/write head
-    AsteroidField,   // Vector-drawn rotating asteroids (Asteroids arcade aesthetic)
-    TankWars,        // Two tanks on terrain lobbing parabolic shells at each other
     MutinyBBS,       // Dial-up modem → Mutiny BBS login session (HCF season 2)
     SonarisGame,     // Breakout with HALT AND CATCH FIRE as bricks (Cameron's game)
-    TokenRing        // Token-ring LAN packet animation (Donna's network)
+    TokenRing,       // Token-ring LAN packet animation (Donna's network)
+    PixieGame,       // Pixie dungeon-crawler text adventure plays out on screen
+    GiantCalc        // Lotus 1-2-3 style spreadsheet fills with Cardiff Giant Q3 1983 financials
 }
 
 public sealed class ScreensaverSettings

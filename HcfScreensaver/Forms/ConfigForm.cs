@@ -121,11 +121,11 @@ public sealed class ConfigForm : Form
             "OscilloScope   — Lissajous waveforms",
             "DosShell       — DOS terminal session",
             "DiskMap        — hard-disk sector map",
-            "AsteroidField  — vector asteroids",
-            "TankWars       — tank battle terrain",
             "MutinyBBS      — dial-up BBS session",
             "SonarisGame    — HALT AND CATCH FIRE breakout",
-            "TokenRing      — Cardiff LAN animation"
+            "TokenRing      — Cardiff LAN animation",
+            "PixieGame      — dungeon text adventure",
+            "GiantCalc      — Cardiff Giant spreadsheet"
         ]);
         _animCombo.SelectedIndexChanged += (_, _) =>
         {
