@@ -137,6 +137,100 @@ public sealed class ScreensaverForm : Form
     private float _interfereBandY;
     private float _interfereTitleAlpha;
 
+    // ── VectorSpin — 3D wireframe data ───────────────────────────────────────
+    private float _vecRX, _vecRY, _vecRZ;
+
+    private static readonly float[][] CubeVerts =
+    [
+        [-1f,-1f,-1f], [ 1f,-1f,-1f], [ 1f, 1f,-1f], [-1f, 1f,-1f],
+        [-1f,-1f, 1f], [ 1f,-1f, 1f], [ 1f, 1f, 1f], [-1f, 1f, 1f]
+    ];
+    private static readonly (int a, int b)[] CubeEdges =
+    [
+        (0,1),(1,2),(2,3),(3,0), (4,5),(5,6),(6,7),(7,4),
+        (0,4),(1,5),(2,6),(3,7)
+    ];
+    private static readonly float[][] TetraVerts =
+    [
+        [ 1f, 1f, 1f], [-1f,-1f, 1f], [-1f, 1f,-1f], [ 1f,-1f,-1f]
+    ];
+    private static readonly (int a, int b)[] TetraEdges =
+    [
+        (0,1),(0,2),(0,3),(1,2),(1,3),(2,3)
+    ];
+
+    // ── OscilloScope ─────────────────────────────────────────────────────────
+    private float _scopeA = 2f, _scopeB = 3f, _scopeDelta;
+    private float _scopeTransTimer;
+    private int   _scopeRatioIdx = 1;
+    private static readonly (float a, float b)[] ScopeRatios =
+        [(1f,1f),(1f,2f),(2f,3f),(3f,4f),(1f,3f),(3f,5f),(2f,5f),(1f,4f)];
+
+    // ── DosShell ─────────────────────────────────────────────────────────────
+    private int   _dosPhase, _dosLineIdx, _dosCharIdx;
+    private float _dosAccum, _dosCursorAccum;
+    private bool  _dosCursor;
+    private float _dosPauseAccum, _dosFadeAlpha = 1f;
+    private readonly List<string> _dosDone = [];
+
+    private static readonly string[] DosLines =
+    [
+        "C:\\GIANT> DIR",
+        "",
+        " Volume in drive C is CARDIFF",
+        " Volume Serial Number is 1983-HCF",
+        " Directory of C:\\GIANT",
+        "",
+        "COMMAND  COM   25307  08-15-83  12:00p",
+        "AUTOEXEC BAT     512  08-15-83  12:00p",
+        "GIANT    SYS   16384  08-15-83  12:00p",
+        "HALT     EXE    4096  09-01-83   2:47p",
+        "CATCH    EXE    8192  09-01-83   2:47p",
+        "FIRE     EXE   16384  09-01-83   3:12p",
+        "ROADMAP  TXT    2048  09-02-83  10:43a",
+        "BIOS     BIN   32768  08-25-83   9:00a",
+        "         8 File(s)    76159 bytes",
+        "         327680 bytes free",
+        "",
+        "C:\\GIANT> TYPE ROADMAP.TXT",
+        "",
+        "  GIANT COMPUTER — PRODUCT ROADMAP",
+        "  Cardiff Giant Computing Corp.",
+        "  Confidential — September 1983",
+        "",
+        "  1. BIOS complete          (Joe)     DUE: 10/15",
+        "  2. OS shell v1.0          (Cameron) DUE: 10/15",
+        "  3. Networking stack       (Donna)   DUE: 11/01",
+        "  4. Retail packaging + docs (Gordon)",
+        "",
+        "  Target ship: Q1 1984.",
+        "",
+        "C:\\GIANT> DEBUG HALT.EXE",
+        "-D CS:0100",
+        "1A3F:0100  48 41 4C 54  20 41 4E 44   HALT AND",
+        "1A3F:0108  20 43 41 54  43 48 20 46   CATCH F",
+        "1A3F:0110  49 52 45 00  F4 AF C0 00   IRE.....",
+        "-U 0110",
+        "1A3F:0110  F4          HLT",
+        "1A3F:0111  AF          SCASW",
+        "1A3F:0112  C0          DB  C0",
+        "-G 0110",
+        "",
+        "** ILLEGAL INSTRUCTION AT 1A3F:0112 **",
+        "PROCESSOR HALTED — CORE TEMP CRITICAL",
+        "",
+        "-Q",
+        "",
+    ];
+
+    // ── DiskMap ───────────────────────────────────────────────────────────────
+    private byte[] _diskSectors = [];
+    private int    _diskCols, _diskRows;
+    private float  _diskHeadCol;
+    private float  _diskHeadAccum;
+    private int    _diskFlashSector = -1;
+    private float  _diskFlashTimer;
+
     // ─────────────────────────────────────────────────────────────────────────
     // Construction
     // ─────────────────────────────────────────────────────────────────────────
@@ -296,6 +390,35 @@ public sealed class ScreensaverForm : Form
         _interfereBandY      = 0f;
         _interfereTitleAlpha = 0f;
 
+        // VectorSpin
+        _vecRX = 0.2f; _vecRY = 0f; _vecRZ = 0.1f;
+
+        // OscilloScope
+        _scopeRatioIdx   = 1;
+        _scopeA          = ScopeRatios[_scopeRatioIdx].a;
+        _scopeB          = ScopeRatios[_scopeRatioIdx].b;
+        _scopeDelta      = 0f;
+        _scopeTransTimer = 0f;
+
+        // DosShell
+        _dosPhase     = 0; _dosLineIdx = 0; _dosCharIdx = 0;
+        _dosAccum     = 0f; _dosCursor = true; _dosFadeAlpha = 1f;
+        _dosPauseAccum = 0f;
+        _dosDone.Clear();
+
+        // DiskMap
+        _diskCols = _previewMode ? 28 : 50;
+        _diskRows = _previewMode ? 12 : 22;
+        _diskSectors = new byte[_diskCols * _diskRows];
+        for (int i = 0; i < _diskSectors.Length; i++)
+        {
+            int r = _rng.Next(100);
+            _diskSectors[i] = (byte)(r < 55 ? 1 : r < 65 ? 2 : r < 72 ? 3 : 0);
+        }
+        _diskHeadCol    = 0f;
+        _diskFlashSector = -1;
+        _diskFlashTimer  = 0f;
+
         _lastMousePosition = Point.Empty;
     }
 
@@ -321,6 +444,10 @@ public sealed class ScreensaverForm : Form
             case AnimationStyle.BinaryRain:     DrawPhosphorDrift(g, true);  break;
             case AnimationStyle.DataCorrupt:    DrawDataCorrupt(g);          break;
             case AnimationStyle.Interference:   DrawInterference(g);         break;
+            case AnimationStyle.VectorSpin:     DrawVectorSpin(g);           break;
+            case AnimationStyle.OscilloScope:   DrawOscilloScope(g);         break;
+            case AnimationStyle.DosShell:       DrawDosShell(g);             break;
+            case AnimationStyle.DiskMap:        DrawDiskMap(g);              break;
         }
     }
 
@@ -343,6 +470,10 @@ public sealed class ScreensaverForm : Form
             case AnimationStyle.CrtTitle:      UpdateCrtTitle(speed);     break;
             case AnimationStyle.DataCorrupt:   UpdateDataCorrupt(speed);  break;
             case AnimationStyle.Interference:  UpdateInterference(speed); break;
+            case AnimationStyle.VectorSpin:    UpdateVectorSpin(speed);   break;
+            case AnimationStyle.OscilloScope:  UpdateOscilloScope(speed); break;
+            case AnimationStyle.DosShell:      UpdateDosShell(speed);     break;
+            case AnimationStyle.DiskMap:       UpdateDiskMap(speed);      break;
         }
     }
 
@@ -919,6 +1050,386 @@ public sealed class ScreensaverForm : Form
         int ta = (int)(255 * _interfereTitleAlpha);
         using var titleBr = new SolidBrush(Color.FromArgb(ta, _settings.TextColor));
         g.DrawString(Title, font, titleBr, tx, ty);
+    }
+
+    // =========================================================================
+    // Shared helpers
+    // =========================================================================
+
+    // =========================================================================
+    // VectorSpin
+    // =========================================================================
+
+    private void UpdateVectorSpin(float speed)
+    {
+        _vecRX += 0.007f * speed;
+        _vecRY += 0.011f * speed;
+        _vecRZ += 0.004f * speed;
+    }
+
+    private void DrawVectorSpin(Graphics g)
+    {
+        var col    = _settings.TextColor;
+        float cx   = ClientSize.Width  / 2f;
+        float cy   = ClientSize.Height / 2f;
+        float unit = Math.Min(ClientSize.Width, ClientSize.Height);
+        float sc   = unit * 0.20f;
+
+        // Large cube — centred slightly left
+        DrawWireframe(g, CubeVerts, CubeEdges,
+            cx - unit * 0.15f, cy, sc,
+            _vecRX, _vecRY, _vecRZ, col, 200);
+
+        // Tetrahedron — smaller, offset right, opposite spin
+        DrawWireframe(g, TetraVerts, TetraEdges,
+            cx + unit * 0.28f, cy, sc * 0.55f,
+            -_vecRX * 1.2f, _vecRY * 0.8f + 1f, _vecRZ * 1.3f, col, 170);
+
+        // Label
+        if (_monoFont != null)
+        {
+            using var lbBr = new SolidBrush(Color.FromArgb(90, col));
+            g.DrawString("CARDIFF GIANT COMPUTING — CAD/3D v1.0",
+                _monoFont, lbBr, 20f, ClientSize.Height - _monoCharH - 10f);
+        }
+    }
+
+    private void DrawWireframe(Graphics g, float[][] verts, (int a, int b)[] edges,
+        float cx, float cy, float scale,
+        float rx, float ry, float rz,
+        Color col, int baseAlpha)
+    {
+        var pts = new PointF[verts.Length];
+        for (int i = 0; i < verts.Length; i++)
+        {
+            Rotate3D(verts[i][0], verts[i][1], verts[i][2], rx, ry, rz,
+                out float ox, out float oy, out float oz);
+            pts[i] = Perspective3D(ox, oy, oz, cx, cy, scale);
+        }
+
+        using var glowPen = new Pen(Color.FromArgb(baseAlpha / 7, col), 5f);
+        using var mainPen = new Pen(Color.FromArgb(baseAlpha, col), 1.5f);
+        foreach (var (a, b) in edges)
+        {
+            g.DrawLine(glowPen, pts[a], pts[b]);
+            g.DrawLine(mainPen, pts[a], pts[b]);
+        }
+
+        // Vertex dots
+        using var dotBr = new SolidBrush(Color.FromArgb(baseAlpha, col));
+        foreach (var p in pts)
+            g.FillEllipse(dotBr, p.X - 2, p.Y - 2, 4, 4);
+    }
+
+    private static void Rotate3D(float x, float y, float z,
+        float rx, float ry, float rz,
+        out float ox, out float oy, out float oz)
+    {
+        // X rotation
+        float ny = y * MathF.Cos(rx) - z * MathF.Sin(rx);
+        float nz = y * MathF.Sin(rx) + z * MathF.Cos(rx);
+        y = ny; z = nz;
+        // Y rotation
+        float nx = x * MathF.Cos(ry) + z * MathF.Sin(ry);
+        nz = -x * MathF.Sin(ry) + z * MathF.Cos(ry);
+        x = nx; z = nz;
+        // Z rotation
+        nx = x * MathF.Cos(rz) - y * MathF.Sin(rz);
+        ny = x * MathF.Sin(rz) + y * MathF.Cos(rz);
+        ox = nx; oy = ny; oz = z;
+    }
+
+    private static PointF Perspective3D(float x, float y, float z,
+        float cx, float cy, float scale)
+    {
+        float d = z + 4f;
+        if (d < 0.1f) d = 0.1f;
+        return new PointF(cx + x * scale / d, cy + y * scale / d);
+    }
+
+    // =========================================================================
+    // OscilloScope
+    // =========================================================================
+
+    private void UpdateOscilloScope(float speed)
+    {
+        // Slowly rotate phase — makes the figure continuously morph
+        _scopeDelta += 0.004f * speed;
+
+        // Periodically transition to a new ratio
+        _scopeTransTimer += speed / 60f;
+        if (_scopeTransTimer > 12f)
+        {
+            _scopeTransTimer = 0f;
+            _scopeRatioIdx   = (_scopeRatioIdx + 1) % ScopeRatios.Length;
+            _scopeA          = ScopeRatios[_scopeRatioIdx].a;
+            _scopeB          = ScopeRatios[_scopeRatioIdx].b;
+        }
+    }
+
+    private void DrawOscilloScope(Graphics g)
+    {
+        var col    = _settings.TextColor;
+        int margin = _previewMode ? 8 : 36;
+
+        var scopeR = new Rectangle(margin, margin,
+            ClientSize.Width  - margin * 2,
+            ClientSize.Height - margin * 2);
+
+        // Bezel background + amber border
+        using var bgBr   = new SolidBrush(Color.FromArgb(4, 10, 4));
+        using var bezPen = new Pen(Color.FromArgb(160, 80, 0), _previewMode ? 2f : 5f);
+        g.FillRectangle(bgBr, scopeR);
+        g.DrawRectangle(bezPen, scopeR);
+
+        // Inner glow on bezel
+        using var glowBezPen = new Pen(Color.FromArgb(30, col), 10f);
+        g.DrawRectangle(glowBezPen, scopeR);
+
+        // Grid
+        int gx = 8, gy = 6;
+        float cw = scopeR.Width / (float)gx;
+        float ch = scopeR.Height / (float)gy;
+        using var gridPen  = new Pen(Color.FromArgb(20, col), 1f);
+        using var axisPen  = new Pen(Color.FromArgb(40, col), 1f);
+        for (int i = 1; i < gx; i++)
+            g.DrawLine(i == gx / 2 ? axisPen : gridPen,
+                scopeR.X + i * cw, scopeR.Y,
+                scopeR.X + i * cw, scopeR.Bottom);
+        for (int i = 1; i < gy; i++)
+            g.DrawLine(i == gy / 2 ? axisPen : gridPen,
+                scopeR.X, scopeR.Y + i * ch,
+                scopeR.Right, scopeR.Y + i * ch);
+
+        // Lissajous trace
+        float scx = scopeR.Width  * 0.44f;
+        float scy = scopeR.Height * 0.44f;
+        float ocx = scopeR.X + scopeR.Width  / 2f;
+        float ocy = scopeR.Y + scopeR.Height / 2f;
+
+        // Period = 2π * LCM when ratios are integers; use 4π as a safe approximation
+        float period = 4f * MathF.PI;
+        const int N  = 800;
+        var pts = new PointF[N];
+        for (int i = 0; i < N; i++)
+        {
+            float t = i / (float)(N - 1) * period;
+            pts[i] = new PointF(
+                ocx + MathF.Sin(_scopeA * t + _scopeDelta) * scx,
+                ocy + MathF.Sin(_scopeB * t) * scy);
+        }
+
+        // Glow pass (wide, low alpha)
+        using var glowPen  = new Pen(Color.FromArgb(18, col), 6f);
+        for (int i = 1; i < N; i++)
+            g.DrawLine(glowPen, pts[i - 1], pts[i]);
+
+        // Main trace
+        using var tracePen = new Pen(Color.FromArgb(200, col), 1.5f);
+        for (int i = 1; i < N; i++)
+            g.DrawLine(tracePen, pts[i - 1], pts[i]);
+
+        // Label — ratio and delta
+        if (_monoFont != null)
+        {
+            using var lbBr = new SolidBrush(Color.FromArgb(90, col));
+            g.DrawString(
+                $"CH1 FREQ:{_scopeA:F0}  CH2 FREQ:{_scopeB:F0}  " +
+                $"DELTA:{_scopeDelta % (MathF.PI * 2):F2} rad  |  LISSAJOUS",
+                _monoFont, lbBr,
+                scopeR.X + 4f, scopeR.Bottom + 4f);
+        }
+    }
+
+    // =========================================================================
+    // DosShell
+    // =========================================================================
+
+    private void UpdateDosShell(float speed)
+    {
+        const float CharsPerSec = 55f;
+        const float CursorHz    = 2f;
+        float dt = speed / 60f;
+
+        _dosCursorAccum += dt;
+        if (_dosCursorAccum > 1f / CursorHz) { _dosCursor = !_dosCursor; _dosCursorAccum = 0f; }
+
+        switch (_dosPhase)
+        {
+            case 0: // Typing
+                _dosAccum += CharsPerSec * dt * speed * 0.7f;
+                while (_dosAccum >= 1f && _dosLineIdx < DosLines.Length)
+                {
+                    _dosAccum -= 1f;
+                    string line = DosLines[_dosLineIdx];
+                    if (_dosCharIdx >= line.Length)
+                    {
+                        _dosDone.Add(line);
+                        _dosLineIdx++;
+                        _dosCharIdx = 0;
+                        if (_dosLineIdx >= DosLines.Length) { _dosPhase = 1; _dosPauseAccum = 0f; }
+                    }
+                    else { _dosCharIdx++; }
+                }
+                break;
+            case 1: // Hold
+                _dosPauseAccum += dt;
+                if (_dosPauseAccum > 3.5f) { _dosPhase = 2; _dosFadeAlpha = 1f; }
+                break;
+            case 2: // Fade out + restart
+                _dosFadeAlpha -= dt * 0.7f;
+                if (_dosFadeAlpha <= 0f)
+                {
+                    _dosPhase = 0; _dosLineIdx = 0; _dosCharIdx = 0;
+                    _dosAccum = 0f; _dosFadeAlpha = 1f;
+                    _dosDone.Clear();
+                }
+                break;
+        }
+    }
+
+    private void DrawDosShell(Graphics g)
+    {
+        if (_monoFont == null) return;
+        float alpha = _dosPhase == 2 ? Math.Max(0f, _dosFadeAlpha) : 1f;
+        var col = _settings.TextColor;
+        using var br    = new SolidBrush(Color.FromArgb((int)(210 * alpha), col));
+        using var dimBr = new SolidBrush(Color.FromArgb((int)(110 * alpha), col));
+
+        int lineH = _monoCharH + 2;
+        int y     = 18;
+
+        foreach (var line in _dosDone)
+        {
+            // Highlight prompt lines
+            var pen = line.StartsWith("C:\\") ? br : dimBr;
+            g.DrawString(line, _monoFont, pen, 18, y);
+            y += lineH;
+        }
+
+        // Current partially-typed line
+        if (_dosPhase == 0 && _dosLineIdx < DosLines.Length)
+        {
+            string partial = DosLines[_dosLineIdx][.._dosCharIdx];
+            g.DrawString(partial + (_dosCursor ? "_" : " "), _monoFont, br, 18, y);
+        }
+    }
+
+    // =========================================================================
+    // DiskMap
+    // =========================================================================
+
+    private void UpdateDiskMap(float speed)
+    {
+        // Advance the scanning head
+        _diskHeadAccum += 0.04f * speed;
+        if (_diskHeadAccum >= 1f)
+        {
+            _diskHeadAccum -= 1f;
+            _diskHeadCol   += 1f;
+            if (_diskHeadCol >= _diskCols)
+            {
+                _diskHeadCol = 0f;
+                // When the head wraps, do a small reshuffle (simulate defrag progress)
+                for (int i = 0; i < _rng.Next(3, 8); i++)
+                {
+                    int idx = _rng.Next(_diskSectors.Length);
+                    if (_diskSectors[idx] == 3) _diskSectors[idx] = 1; // consolidate fragment
+                }
+            }
+        }
+
+        // Flash a random sector periodically
+        _diskFlashTimer -= speed / 60f;
+        if (_diskFlashTimer <= 0f)
+        {
+            _diskFlashSector = _rng.Next(_diskSectors.Length);
+            _diskFlashTimer  = 0.08f + (float)_rng.NextDouble() * 0.25f;
+        }
+    }
+
+    private void DrawDiskMap(Graphics g)
+    {
+        var col    = _settings.TextColor;
+        int marginX = _previewMode ? 8 : 24;
+        int marginT = _previewMode ? 8 : 20;
+        int statsH  = (_monoFont != null ? _monoCharH : 16) * 2 + 12;
+        int availW  = ClientSize.Width  - marginX * 2;
+        int availH  = ClientSize.Height - marginT - statsH - marginX;
+
+        float cellStep = Math.Min(availW / (float)_diskCols, availH / (float)_diskRows);
+        float cellSize = Math.Max(2f, cellStep - 1f);
+        float gridW    = _diskCols * cellStep;
+        float gridH    = _diskRows * cellStep;
+        float ox       = marginX + (availW - gridW) / 2f;
+        float oy       = marginT;
+
+        // Sector cells
+        for (int row = 0; row < _diskRows; row++)
+        {
+            for (int col2 = 0; col2 < _diskCols; col2++)
+            {
+                int   idx = row * _diskCols + col2;
+                float sx  = ox + col2 * cellStep;
+                float sy  = oy + row  * cellStep;
+
+                bool flashing = idx == _diskFlashSector && _diskFlashTimer > 0.04f;
+                Color c = flashing ? Color.White :
+                    _diskSectors[idx] switch
+                    {
+                        0 => Color.FromArgb(10, 28, 10),    // free
+                        1 => Color.FromArgb(0,  110, 0),    // data
+                        2 => Color.FromArgb(57, 255, 20),   // system
+                        3 => Color.FromArgb(160, 80, 0),    // fragmented
+                        _ => Color.Black
+                    };
+
+                using var cellBr = new SolidBrush(c);
+                g.FillRectangle(cellBr, sx, sy, cellSize, cellSize);
+            }
+        }
+
+        // Read/write head — vertical line + triangle pointer
+        float hx = ox + _diskHeadCol * cellStep + cellSize / 2f;
+        using var headPen = new Pen(Color.FromArgb(100, col), 1f);
+        g.DrawLine(headPen, hx, oy - 2, hx, oy + gridH + 2);
+        using var headBr = new SolidBrush(Color.White);
+        g.FillPolygon(headBr, [
+            new PointF(hx - 5, oy - 10),
+            new PointF(hx + 5, oy - 10),
+            new PointF(hx,     oy - 2)
+        ]);
+
+        // Stats
+        if (_monoFont != null)
+        {
+            float sy2  = oy + gridH + 12;
+            int used   = 0;
+            int frags  = 0;
+            foreach (var s in _diskSectors) { if (s > 0) used++; if (s == 3) frags++; }
+            int pctUsed = used * 100 / Math.Max(1, _diskSectors.Length);
+            int cyl     = (int)(_diskHeadCol / _diskCols * 612);
+            int head    = ((int)_diskHeadCol / 3) % 6;
+            int sec     = (int)_diskHeadCol % 17 + 1;
+
+            using var statsBr = new SolidBrush(Color.FromArgb(160, col));
+            using var dimBr   = new SolidBrush(Color.FromArgb(70, col));
+            g.DrawString(
+                $"CYL:{cyl:D4}  HEAD:{head}  SECT:{sec:D2}   " +
+                $"USED:{pctUsed}%  FRAGS:{frags}  " +
+                $"FREE:{_diskSectors.Length - used} sectors",
+                _monoFont, statsBr, ox, sy2);
+
+            // Capacity bar
+            float barW    = gridW;
+            int   barFill = (int)(barW * pctUsed / 100f);
+            using var barBgBr = new SolidBrush(Color.FromArgb(20, col));
+            using var barFgBr = new SolidBrush(Color.FromArgb(120, col));
+            g.FillRectangle(barBgBr, ox, sy2 + _monoCharH + 4, barW, 6);
+            g.FillRectangle(barFgBr, ox, sy2 + _monoCharH + 4, barFill, 6);
+            g.DrawString("CARDIFF GIANT HDD  //  DISK ANALYZER v1.1",
+                _monoFont, dimBr, ox + barW + 10, sy2 + _monoCharH + 2);
+        }
     }
 
     // =========================================================================

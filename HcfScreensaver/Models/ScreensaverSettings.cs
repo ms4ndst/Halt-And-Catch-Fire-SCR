@@ -12,7 +12,11 @@ public enum AnimationStyle
     CrtTitle,        // Title card with CRT scanlines, phosphor glow and flicker
     BinaryRain,      // Columns of binary 0s and 1s (amber palette)
     DataCorrupt,     // Glitch/data-corruption effect on the title
-    Interference     // TV static with the title visible through the noise
+    Interference,    // TV static with the title visible through the noise
+    VectorSpin,      // Rotating 3D wireframe objects with perspective projection
+    OscilloScope,    // Lissajous figures on a CRT oscilloscope display
+    DosShell,        // Extended DOS terminal session with commands and DEBUG
+    DiskMap          // Hard-disk sector map with scanning read/write head
 }
 
 public sealed class ScreensaverSettings

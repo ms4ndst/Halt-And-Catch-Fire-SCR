@@ -116,7 +116,11 @@ public sealed class ConfigForm : Form
             "CrtTitle       — CRT phosphor title",
             "BinaryRain     — binary 0/1 rainfall",
             "DataCorrupt    — glitch/corruption",
-            "Interference   — TV static noise"
+            "Interference   — TV static noise",
+            "VectorSpin     — 3D wireframe objects",
+            "OscilloScope   — Lissajous waveforms",
+            "DosShell       — DOS terminal session",
+            "DiskMap        — hard-disk sector map"
         ]);
         _animCombo.SelectedIndexChanged += (_, _) =>
         {

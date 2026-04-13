@@ -14,7 +14,7 @@ circuit-board traces, and the glitchy digital feel of machines that were pushed 
 
 ## Animations
 
-Eight distinct animations, all rendered in the phosphor-green-on-black palette of period-authentic
+Twelve distinct animations, all rendered in the phosphor-green-on-black palette of period-authentic
 80s computer terminals.
 
 | Animation | Description |
@@ -27,6 +27,10 @@ Eight distinct animations, all rendered in the phosphor-green-on-black palette o
 | **BinaryRain** | Like PhosphorDrift but restricted to `0` and `1` — rendered in period-authentic **amber** phosphor |
 | **DataCorrupt** | RGB channel splitting, random character corruption, horizontal screen tears (clipped region displacement), and scattered noise blocks |
 | **Interference** | Analogue TV static (hundreds of noise pixels per frame) with moving interference bands and the title pulsing in and out through the snow |
+| **VectorSpin** | A perspective-projected 3D wireframe cube and tetrahedron rotating simultaneously with phosphor glow — evoking 80s CAD software and vector arcade games |
+| **OscilloScope** | Lissajous figures drawn on a CRT oscilloscope display complete with amber bezel, phosphor grid, and a rotating phase angle that continuously morphs the figure through 8 ratio presets |
+| **DosShell** | A full DOS terminal session plays out — `DIR`, `TYPE ROADMAP.TXT`, and a `DEBUG` session that disassembles the actual `HLT` + illegal opcode sequence at address `1A3F:0110` |
+| **DiskMap** | A hard-disk sector map showing data, system, fragmented, and free sectors with a scanning read/write head, cylinder/head/sector readout, and a live capacity bar |
 
 ---
 
